@@ -155,6 +155,7 @@ export default function App() {
   const [claimAction, setClaimAction] = useState<ActionClaim['action']>('investigated')
   const [claimSuspectedRole, setClaimSuspectedRole] = useState<RoleId | ''>('vampire')
   const [claimQuote, setClaimQuote] = useState('')
+  const [claimSourceMessageId, setClaimSourceMessageId] = useState<number | null>(null)
 
   const addNote = () => {
     const text = note.trim()
@@ -169,6 +170,7 @@ export default function App() {
 
   const openClaimComposer = () => {
     if (!game) return
+    setClaimSourceMessageId(null)
     const living = game.players.filter((player) => player.alive)
     if (!living.some((player) => player.id === claimantId) && living[0]) {
       setClaimantId(living[0].id)
@@ -179,13 +181,31 @@ export default function App() {
     setClaimComposerOpen(true)
   }
 
+  const openClaimFromMessage = (messageId: number) => {
+    if (!game) return
+    const message = game.chatMessages.find((candidate) => candidate.id === messageId)
+    if (!message || message.channel !== 'village') return
+
+    setClaimSourceMessageId(message.id)
+    setClaimantId(message.authorId)
+    setClaimQuote(message.text)
+    setClaimStatement(message.text)
+    setClaimComposerOpen(true)
+  }
+
   const addStructuredClaim = () => {
     if (!game) return
 
     try {
       let next = game
       if (claimKind === 'role') {
-        next = recordRoleClaim(game, claimantId, claimRole, claimQuote)
+        next = recordRoleClaim(
+          game,
+          claimantId,
+          claimRole,
+          claimQuote,
+          claimSourceMessageId ?? undefined,
+        )
       } else if (claimKind === 'information') {
         next = recordInformationClaim(
           game,
@@ -193,6 +213,7 @@ export default function App() {
           claimTargetId,
           claimStatement,
           claimQuote,
+          claimSourceMessageId ?? undefined,
         )
       } else if (claimKind === 'action') {
         next = recordActionClaim(
@@ -201,6 +222,7 @@ export default function App() {
           claimTargetId,
           claimAction,
           claimQuote,
+          claimSourceMessageId ?? undefined,
         )
       } else if (claimKind === 'accusation') {
         next = recordAccusationClaim(
@@ -209,14 +231,22 @@ export default function App() {
           claimTargetId,
           claimSuspectedRole || undefined,
           claimQuote,
+          claimSourceMessageId ?? undefined,
         )
       } else {
-        next = recordDefenseClaim(game, claimantId, claimTargetId, claimQuote)
+        next = recordDefenseClaim(
+          game,
+          claimantId,
+          claimTargetId,
+          claimQuote,
+          claimSourceMessageId ?? undefined,
+        )
       }
 
       setGame(next)
       setClaimStatement('')
       setClaimQuote('')
+      setClaimSourceMessageId(null)
       setClaimComposerOpen(false)
     } catch {
       // Motor geçersiz veya eksik yapılandırılmış kayıtları reddeder.
@@ -338,6 +368,7 @@ export default function App() {
           setSelected={setSelected}
           onResolve={finishNight}
           onSendChat={sendHumanChat}
+          onClaimFromMessage={openClaimFromMessage}
         />
       )}
       {screen === 'dawn' && game && <Dawn game={game} onContinue={toDiscussion} />}
@@ -374,6 +405,7 @@ export default function App() {
           action={claimAction}
           suspectedRole={claimSuspectedRole}
           quote={claimQuote}
+          sourceMessageId={claimSourceMessageId}
           setKind={setClaimKind}
           setClaimantId={setClaimantId}
           setTargetId={setClaimTargetId}
@@ -521,6 +553,7 @@ function Day({
   onAddPrivateNote,
   onRemovePrivateNote,
   onSendChat,
+  onClaimFromMessage,
 }: {
   game: GameState
   selected: number | null
@@ -540,6 +573,7 @@ function Day({
   onAddPrivateNote: (playerId: number, round: number, text: string) => void
   onRemovePrivateNote: (playerId: number, noteId: number) => void
   onSendChat: (channel: ChatChannel, text: string) => void
+  onClaimFromMessage: (messageId: number) => void
 }) {
   const [panelMode, setPanelMode] = useState<'chat' | 'deduction'>('chat')
   const publicPlayers = getPrivatePlayerView(game, HUMAN_ID).publicPlayers
@@ -602,7 +636,12 @@ function Day({
         </nav>
 
         {panelMode === 'chat' ? (
-          <ChatPanel game={game} viewerId={HUMAN_ID} onSend={onSendChat} />
+          <ChatPanel
+            game={game}
+            viewerId={HUMAN_ID}
+            onSend={onSendChat}
+            onClaimFromMessage={onClaimFromMessage}
+          />
         ) : (
           <>
         <header className="deduction-head">
@@ -687,11 +726,13 @@ function ChatPanel({
   game,
   viewerId,
   onSend,
+  onClaimFromMessage,
   compact = false,
 }: {
   game: GameState
   viewerId: number
   onSend: (channel: ChatChannel, text: string) => void
+  onClaimFromMessage?: (messageId: number) => void
   compact?: boolean
 }) {
   const access = getChatAccess(game, viewerId)
@@ -771,6 +812,14 @@ function ChatPanel({
                     <small>{message.round}. {message.phase === 'night' ? 'Gece' : 'Gün'}</small>
                   </header>
                   <p>{message.text}</p>
+                  {selectedChannel === 'village' && onClaimFromMessage && (
+                    <button
+                      className="chat-to-claim"
+                      onClick={() => onClaimFromMessage(message.id)}
+                    >
+                      ◇ İddia olarak kaydet
+                    </button>
+                  )}
                 </div>
               </article>
             )
@@ -894,6 +943,7 @@ function Claims({
                         <div>
                           <b>{claimant?.name ?? 'Oyuncu'}</b>
                           <small>{claim.round}. Gün · Rol iddiası</small>
+                          {claim.sourceMessageId && <em className="claim-source-badge">⌁ Köy sohbetinden</em>}
                           {claim.quote && <p>“{claim.quote}”</p>}
                         </div>
                         <button title="İddiayı geri çek" onClick={() => onWithdrawClaim(claim.id)}>↶</button>
@@ -933,6 +983,7 @@ function Claims({
                     <b>{claimant?.name ?? 'Oyuncu'}</b>
                     <small>{claim.round}. Gün · {meta.label}</small>
                   </div>
+                  {claim.sourceMessageId && <em className="claim-source-badge">⌁ Köy sohbetinden</em>}
                   {target && (
                     <div className="social-claim-target">
                       <span>→</span>
@@ -963,6 +1014,7 @@ function ClaimComposer({
   action,
   suspectedRole,
   quote,
+  sourceMessageId,
   setKind,
   setClaimantId,
   setTargetId,
@@ -983,6 +1035,7 @@ function ClaimComposer({
   action: ActionClaim['action']
   suspectedRole: RoleId | ''
   quote: string
+  sourceMessageId: number | null
   setKind: (kind: ClaimKind) => void
   setClaimantId: (id: number) => void
   setTargetId: (id: number) => void
@@ -995,6 +1048,12 @@ function ClaimComposer({
   onSave: () => void
 }) {
   const living = game.players.filter((player) => player.alive)
+  const sourceMessage = sourceMessageId === null
+    ? null
+    : game.chatMessages.find((message) => message.id === sourceMessageId) ?? null
+  const claimantOptions = sourceMessage
+    ? game.players.filter((player) => player.id === sourceMessage.authorId)
+    : living
   const roles = Object.keys(ROLE_DEFINITIONS) as RoleId[]
   const kindOptions: Array<{ id: ClaimKind; icon: string; label: string }> = [
     { id: 'role', icon: '♙', label: 'Rol' },
@@ -1011,8 +1070,18 @@ function ClaimComposer({
       <section className="claim-modal panel" role="dialog" aria-modal="true" aria-label="Yapılandırılmış kayıt ekle" onMouseDown={(event) => event.stopPropagation()}>
         <button className="claim-modal-close" onClick={onClose}>×</button>
         <small>İDDİA DEFTERİ</small>
-        <h2>Kayıt Ekle</h2>
-        <p>Söyleneni kaydet. Uygulama bu kaydın doğru veya yanlış olduğuna karar vermez.</p>
+        <h2>{sourceMessage ? 'Mesajı İddia Olarak Kaydet' : 'Kayıt Ekle'}</h2>
+        <p>{sourceMessage
+          ? 'Mesajın kaynağı ve yazarı korunur. Sen yalnızca bu beyanın hangi tür kayıt olduğunu düzenlersin.'
+          : 'Söyleneni kaydet. Uygulama bu kaydın doğru veya yanlış olduğuna karar vermez.'}</p>
+
+        {sourceMessage && (
+          <div className="claim-source-preview">
+            <span>⌁ KÖY SOHBETİNDEN</span>
+            <b>{game.players.find((player) => player.id === sourceMessage.authorId)?.name ?? 'Oyuncu'}</b>
+            <blockquote>“{sourceMessage.text}”</blockquote>
+          </div>
+        )}
 
         <div className="claim-kind-picker">
           {kindOptions.map((option) => (
@@ -1024,8 +1093,12 @@ function ClaimComposer({
 
         <label>
           <span>Söyleyen oyuncu</span>
-          <select value={claimantId} onChange={(event) => setClaimantId(Number(event.target.value))}>
-            {living.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}
+          <select
+            value={claimantId}
+            disabled={Boolean(sourceMessage)}
+            onChange={(event) => setClaimantId(Number(event.target.value))}
+          >
+            {claimantOptions.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}
           </select>
         </label>
 
@@ -1077,7 +1150,13 @@ function ClaimComposer({
 
         <label>
           <span>Söylediği cümle / not <em>isteğe bağlı</em></span>
-          <textarea value={quote} onChange={(event) => setQuote(event.target.value)} placeholder="Örn. “Dün gece Can'ı araştırdım, masum çıktı.”" maxLength={180} />
+          <textarea
+            value={quote}
+            readOnly={Boolean(sourceMessage)}
+            onChange={(event) => setQuote(event.target.value)}
+            placeholder="Örn. “Dün gece Can'ı araştırdım, masum çıktı.”"
+            maxLength={280}
+          />
         </label>
 
         <div className="claim-modal-actions">
@@ -1400,6 +1479,7 @@ function Inspector({
                     {entry.claim.status === 'withdrawn' && <em> · geri çekildi</em>}
                   </small>
                   <b>{described.title}</b>
+                  {entry.claim.sourceMessageId && <em className="timeline-source">⌁ Köy sohbetinden kaydedildi</em>}
                   {described.target && (
                     <p><span>→ {described.target.name}</span>{described.detail && <> · {described.detail}</>}</p>
                   )}
