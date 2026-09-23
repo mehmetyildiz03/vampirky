@@ -4,7 +4,8 @@ import {
   beginNight,
   beginVoting,
   createGame,
-  findRoleClaimConflicts,
+  groupRoleClaims,
+  withdrawClaim,
   getPrivatePlayerView,
   recordRoleClaim,
   resolveNight,
@@ -126,16 +127,39 @@ describe('day resolution', () => {
 })
 
 describe('claim system', () => {
-  it('surfaces conflicting singleton role claims without deciding who is truthful', () => {
+  it('groups any number of active role claims without labeling them as a contradiction', () => {
     let game = createGame(seeds(9))
     game = recordRoleClaim(game, 1, 'seer', 'Ben Kâhinim.')
-    game = recordRoleClaim(game, 2, 'seer', 'Hayır, Kâhin benim.')
+    game = recordRoleClaim(game, 2, 'seer', 'Kâhin benim.')
+    game = recordRoleClaim(game, 3, 'seer', 'Ben de Kâhinim.')
 
-    const conflicts = findRoleClaimConflicts(game)
+    const groups = groupRoleClaims(game)
+    const seerGroup = groups.find((group) => group.role === 'seer')
 
-    expect(conflicts).toHaveLength(1)
-    expect(new Set(conflicts[0].map((claim) => claim.claimantId))).toEqual(
-      new Set([1, 2]),
-    )
+    expect(seerGroup?.claims.map((claim) => claim.claimantId)).toEqual([1, 2, 3])
+  })
+
+  it('keeps different role claims in different groups', () => {
+    let game = createGame(seeds(9))
+    game = recordRoleClaim(game, 1, 'seer')
+    game = recordRoleClaim(game, 2, 'protector')
+    game = recordRoleClaim(game, 3, 'villager')
+
+    expect(groupRoleClaims(game).map((group) => group.role)).toEqual([
+      'seer',
+      'protector',
+      'villager',
+    ])
+  })
+
+  it('removes withdrawn role claims from active claim groups without deleting history', () => {
+    let game = createGame(seeds(9))
+    game = recordRoleClaim(game, 1, 'seer')
+    game = recordRoleClaim(game, 2, 'seer')
+    game = withdrawClaim(game, 1)
+
+    expect(groupRoleClaims(game)[0].claims.map((claim) => claim.claimantId)).toEqual([2])
+    expect(game.claims).toHaveLength(2)
+    expect(game.claims.find((claim) => claim.id === 1)?.status).toBe('withdrawn')
   })
 })

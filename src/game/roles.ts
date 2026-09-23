@@ -5,7 +5,6 @@ export interface RoleDefinition {
   name: string
   faction: Faction
   nightAction: 'attack' | 'protect' | 'investigate' | null
-  singletonClaim: boolean
 }
 
 export const ROLE_DEFINITIONS: Record<RoleId, RoleDefinition> = {
@@ -14,28 +13,24 @@ export const ROLE_DEFINITIONS: Record<RoleId, RoleDefinition> = {
     name: 'Vampir',
     faction: 'vampire',
     nightAction: 'attack',
-    singletonClaim: false,
   },
   villager: {
     id: 'villager',
     name: 'Köylü',
     faction: 'village',
     nightAction: null,
-    singletonClaim: false,
   },
   seer: {
     id: 'seer',
     name: 'Kâhin',
     faction: 'village',
     nightAction: 'investigate',
-    singletonClaim: true,
   },
   protector: {
     id: 'protector',
     name: 'Koruyucu',
     faction: 'village',
     nightAction: 'protect',
-    singletonClaim: true,
   },
 }
 

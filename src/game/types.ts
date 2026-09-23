@@ -27,12 +27,56 @@ export interface PublicPlayer extends PlayerSeed {
   alive: boolean
 }
 
-export interface RoleClaim {
+export type ClaimKind = 'role' | 'information' | 'action' | 'accusation' | 'defense'
+export type ClaimStatus = 'active' | 'withdrawn'
+
+export interface ClaimBase {
   id: number
   claimantId: number
-  role: RoleId
-  quote?: string
+  kind: ClaimKind
   round: number
+  status: ClaimStatus
+  quote?: string
+}
+
+export interface RoleClaim extends ClaimBase {
+  kind: 'role'
+  role: RoleId
+}
+
+export interface InformationClaim extends ClaimBase {
+  kind: 'information'
+  targetId: number
+  statement: string
+}
+
+export interface ActionClaim extends ClaimBase {
+  kind: 'action'
+  targetId: number
+  action: 'protected' | 'investigated' | 'visited'
+}
+
+export interface AccusationClaim extends ClaimBase {
+  kind: 'accusation'
+  targetId: number
+  suspectedRole?: RoleId
+}
+
+export interface DefenseClaim extends ClaimBase {
+  kind: 'defense'
+  targetId: number
+}
+
+export type StructuredClaim =
+  | RoleClaim
+  | InformationClaim
+  | ActionClaim
+  | AccusationClaim
+  | DefenseClaim
+
+export interface RoleClaimGroup {
+  role: RoleId
+  claims: StructuredClaim[]
 }
 
 export type NightActionType = 'attack' | 'protect' | 'investigate'

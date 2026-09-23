@@ -11,7 +11,9 @@ import type {
   PrivatePlayerView,
   PublicPlayer,
   RoleClaim,
+  RoleClaimGroup,
   RoleId,
+  StructuredClaim,
   VoteResolution,
   Winner,
 } from './types'
@@ -318,9 +320,11 @@ export function recordRoleClaim(
   const claim: RoleClaim = {
     id: next.nextClaimId,
     claimantId,
+    kind: 'role',
     role,
     quote: quote?.trim() || undefined,
     round: next.round,
+    status: 'active',
   }
 
   next.claims.push(claim)
@@ -328,18 +332,27 @@ export function recordRoleClaim(
   return next
 }
 
-export function findRoleClaimConflicts(state: GameState): RoleClaim[][] {
+export function groupRoleClaims(state: GameState): RoleClaimGroup[] {
   const groups = new Map<RoleId, RoleClaim[]>()
 
   for (const claim of state.claims) {
-    if (!ROLE_DEFINITIONS[claim.role].singletonClaim) continue
+    if (claim.kind !== 'role' || claim.status !== 'active') continue
     const current = groups.get(claim.role) ?? []
-    groups.set(claim.role, [...current, claim])
+    groups.set(claim.role, [...current, { ...claim }])
   }
 
-  return [...groups.values()].filter(
-    (claims) => new Set(claims.map((claim) => claim.claimantId)).size > 1,
+  return [...groups.entries()].map(([role, claims]) => ({ role, claims }))
+}
+
+export function withdrawClaim(state: GameState, claimId: number): GameState {
+  const claim = state.claims.find((candidate) => candidate.id === claimId)
+  if (!claim) throw new Error('Claim not found.')
+
+  const next = cloneState(state)
+  next.claims = next.claims.map((candidate): StructuredClaim =>
+    candidate.id === claimId ? { ...candidate, status: 'withdrawn' } : candidate,
   )
+  return next
 }
 
 function winnerForState(state: GameState): Winner {
