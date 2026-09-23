@@ -401,8 +401,9 @@ export function recordRoleClaim(
   claimantId: number,
   role: RoleId,
   quote?: string,
+  sourceMessageId?: number,
 ): GameState {
-  assertClaimantCanSpeak(state, claimantId)
+  assertClaimCreationAllowed(state, claimantId, sourceMessageId)
 
   const next = cloneState(state)
   const claim: RoleClaim = {
@@ -411,6 +412,7 @@ export function recordRoleClaim(
     kind: 'role',
     role,
     quote: quote?.trim() || undefined,
+    sourceMessageId,
     round: next.round,
     status: 'active',
   }
@@ -424,6 +426,34 @@ function assertClaimantCanSpeak(state: GameState, claimantId: number): GamePlaye
   const claimant = findPlayer(state, claimantId)
   if (!claimant.alive) throw new Error('Dead players cannot create new claims.')
   return claimant
+}
+
+function assertVillageMessageSource(
+  state: GameState,
+  claimantId: number,
+  sourceMessageId: number,
+): ChatMessage {
+  const message = state.chatMessages.find((candidate) => candidate.id === sourceMessageId)
+  if (!message) throw new Error('Source chat message not found.')
+  if (message.channel !== 'village') {
+    throw new Error('Only village chat messages can source public claims.')
+  }
+  if (message.authorId !== claimantId) {
+    throw new Error('Claimant must match the source message author.')
+  }
+  return message
+}
+
+function assertClaimCreationAllowed(
+  state: GameState,
+  claimantId: number,
+  sourceMessageId?: number,
+): void {
+  if (sourceMessageId !== undefined) {
+    assertVillageMessageSource(state, claimantId, sourceMessageId)
+    return
+  }
+  assertClaimantCanSpeak(state, claimantId)
 }
 
 function assertClaimTargetExists(state: GameState, targetId: number): GamePlayer {
@@ -451,8 +481,9 @@ export function recordInformationClaim(
   targetId: number,
   statement: string,
   quote?: string,
+  sourceMessageId?: number,
 ): GameState {
-  assertClaimantCanSpeak(state, claimantId)
+  assertClaimCreationAllowed(state, claimantId, sourceMessageId)
   assertClaimTargetExists(state, targetId)
   const text = statement.trim()
   if (!text) throw new Error('Information claim statement cannot be empty.')
@@ -463,6 +494,7 @@ export function recordInformationClaim(
     targetId,
     statement: text,
     quote: quote?.trim() || undefined,
+    sourceMessageId,
   })
 }
 
@@ -472,8 +504,9 @@ export function recordActionClaim(
   targetId: number,
   action: ActionClaim['action'],
   quote?: string,
+  sourceMessageId?: number,
 ): GameState {
-  assertClaimantCanSpeak(state, claimantId)
+  assertClaimCreationAllowed(state, claimantId, sourceMessageId)
   assertClaimTargetExists(state, targetId)
 
   return appendStructuredClaim<ActionClaim>(state, {
@@ -482,6 +515,7 @@ export function recordActionClaim(
     targetId,
     action,
     quote: quote?.trim() || undefined,
+    sourceMessageId,
   })
 }
 
@@ -491,8 +525,9 @@ export function recordAccusationClaim(
   targetId: number,
   suspectedRole?: RoleId,
   quote?: string,
+  sourceMessageId?: number,
 ): GameState {
-  assertClaimantCanSpeak(state, claimantId)
+  assertClaimCreationAllowed(state, claimantId, sourceMessageId)
   assertClaimTargetExists(state, targetId)
 
   return appendStructuredClaim<AccusationClaim>(state, {
@@ -501,6 +536,7 @@ export function recordAccusationClaim(
     targetId,
     suspectedRole,
     quote: quote?.trim() || undefined,
+    sourceMessageId,
   })
 }
 
@@ -509,8 +545,9 @@ export function recordDefenseClaim(
   claimantId: number,
   targetId: number,
   quote?: string,
+  sourceMessageId?: number,
 ): GameState {
-  assertClaimantCanSpeak(state, claimantId)
+  assertClaimCreationAllowed(state, claimantId, sourceMessageId)
   assertClaimTargetExists(state, targetId)
 
   return appendStructuredClaim<DefenseClaim>(state, {
@@ -518,6 +555,7 @@ export function recordDefenseClaim(
     kind: 'defense',
     targetId,
     quote: quote?.trim() || undefined,
+    sourceMessageId,
   })
 }
 

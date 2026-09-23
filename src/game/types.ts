@@ -37,6 +37,7 @@ export interface ClaimBase {
   round: number
   status: ClaimStatus
   quote?: string
+  sourceMessageId?: number
 }
 
 export interface RoleClaim extends ClaimBase {

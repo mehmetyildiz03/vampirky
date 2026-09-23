@@ -370,3 +370,83 @@ describe('chat channels', () => {
     ).toThrow('Chat message cannot be empty.')
   })
 })
+
+
+describe('chat sourced claims', () => {
+  it('links a village message to a structured claim', () => {
+    let game = beginNight(createGame(seeds(9)))
+    game = resolveNight(game)
+    game = beginDiscussion(game)
+    const author = game.players.find((player) => player.alive)!
+    const target = game.players.find((player) => player.alive && player.id !== author.id)!
+
+    game = sendChatMessage(game, author.id, 'village', 'Bence bu oyuncu Vampir.')
+    const messageId = game.chatMessages.at(-1)!.id
+    game = recordAccusationClaim(
+      game,
+      author.id,
+      target.id,
+      'vampire',
+      'Bence bu oyuncu Vampir.',
+      messageId,
+    )
+
+    expect(game.claims.at(-1)).toMatchObject({
+      claimantId: author.id,
+      sourceMessageId: messageId,
+      kind: 'accusation',
+    })
+  })
+
+  it('rejects vampire and ghost messages as public claim sources', () => {
+    let game = beginNight(createGame(seeds(9)))
+    const vampire = game.players.find((player) => player.secretRole === 'vampire')!
+    game = sendChatMessage(game, vampire.id, 'vampire', 'Gizli mesaj.')
+    const vampireMessageId = game.chatMessages.at(-1)!.id
+
+    expect(() =>
+      recordRoleClaim(game, vampire.id, 'vampire', 'Gizli mesaj.', vampireMessageId),
+    ).toThrow('Only village chat messages can source public claims.')
+  })
+
+  it('requires the claim author to match the source message author', () => {
+    let game = beginNight(createGame(seeds(9)))
+    game = resolveNight(game)
+    game = beginDiscussion(game)
+    const living = game.players.filter((player) => player.alive)
+
+    game = sendChatMessage(game, living[0].id, 'village', 'Ben Kâhinim.')
+    const messageId = game.chatMessages.at(-1)!.id
+
+    expect(() =>
+      recordRoleClaim(game, living[1].id, 'seer', 'Ben Kâhinim.', messageId),
+    ).toThrow('Claimant must match the source message author.')
+  })
+
+  it('can archive an earlier village statement after its author dies', () => {
+    let game = beginNight(createGame(seeds(9)))
+    game = resolveNight(game)
+    game = beginDiscussion(game)
+    const author = game.players.find((player) => player.alive && player.secretRole !== 'vampire')!
+    game = sendChatMessage(game, author.id, 'village', 'Ben Köylüyüm.')
+    const messageId = game.chatMessages.at(-1)!.id
+
+    game = beginVoting(game)
+    game = resolveVote(game)
+    game = beginNight(game)
+
+    const vampires = game.players.filter((player) => player.alive && player.secretRole === 'vampire')
+    for (const vampire of vampires) {
+      game = submitNightAction(game, vampire.id, author.id)
+    }
+    game = resolveNight(game)
+
+    expect(game.players.find((player) => player.id === author.id)?.alive).toBe(false)
+    game = recordRoleClaim(game, author.id, 'villager', 'Ben Köylüyüm.', messageId)
+
+    expect(game.claims.at(-1)).toMatchObject({
+      claimantId: author.id,
+      sourceMessageId: messageId,
+    })
+  })
+})
