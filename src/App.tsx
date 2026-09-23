@@ -1,83 +1,638 @@
 import { useMemo, useState, type CSSProperties } from 'react'
+import {
+  beginDiscussion,
+  beginNight,
+  beginVoting,
+  createGame,
+  getPrivatePlayerView,
+  submitNightAction,
+  submitVote,
+  validNightTargets,
+} from './game/engine'
+import { completeNightWithBots, completeVoteWithBots } from './game/demo'
+import { ROLE_DEFINITIONS, buildRolePack, countRoles } from './game/roles'
+import type { GameState, RoleId } from './game/types'
 
-type Screen = 'home' | 'lobby' | 'day' | 'night'
-type Player = { id:number; name:string; initial:string; accent:string; status?:'ready'|'not-ready'|'joining'; mic?:boolean }
-type Claim = { id:number; player:string; role:string; quote:string; tone:'violet'|'cyan'|'gold'|'red' }
+type Screen =
+  | 'home'
+  | 'lobby'
+  | 'role'
+  | 'night'
+  | 'dawn'
+  | 'day'
+  | 'vote'
+  | 'vote-result'
+  | 'end'
 
-const players:Player[] = [
-  {id:1,name:'Ali',initial:'A',accent:'#b67a47',status:'ready',mic:true},
-  {id:2,name:'Ayşe',initial:'A',accent:'#8d83bd',status:'ready'},
-  {id:3,name:'Mert',initial:'M',accent:'#8a6d57',status:'ready'},
-  {id:4,name:'Esra',initial:'E',accent:'#a24139',status:'not-ready',mic:true},
-  {id:5,name:'Burak',initial:'B',accent:'#a98b55',status:'ready'},
-  {id:6,name:'Zeynep',initial:'Z',accent:'#587991',status:'ready'},
-  {id:7,name:'Kerem',initial:'K',accent:'#79634e',status:'not-ready'},
-  {id:8,name:'Elif',initial:'E',accent:'#6e5a75',status:'ready'},
-  {id:9,name:'Can',initial:'C',accent:'#716550',status:'joining'}
+type Player = {
+  id: number
+  name: string
+  initial: string
+  accent: string
+  status?: 'ready' | 'not-ready' | 'joining'
+  mic?: boolean
+}
+
+type Claim = {
+  id: number
+  player: string
+  role: string
+  quote: string
+  tone: 'violet' | 'cyan' | 'gold' | 'red'
+}
+
+const HUMAN_ID = 1
+
+const players: Player[] = [
+  { id: 1, name: 'Ali', initial: 'A', accent: '#b67a47', status: 'ready', mic: true },
+  { id: 2, name: 'Ayşe', initial: 'A', accent: '#8d83bd', status: 'ready' },
+  { id: 3, name: 'Mert', initial: 'M', accent: '#8a6d57', status: 'ready' },
+  { id: 4, name: 'Esra', initial: 'E', accent: '#a24139', status: 'not-ready', mic: true },
+  { id: 5, name: 'Burak', initial: 'B', accent: '#a98b55', status: 'ready' },
+  { id: 6, name: 'Zeynep', initial: 'Z', accent: '#587991', status: 'ready' },
+  { id: 7, name: 'Kerem', initial: 'K', accent: '#79634e', status: 'not-ready' },
+  { id: 8, name: 'Elif', initial: 'E', accent: '#6e5a75', status: 'ready' },
+  { id: 9, name: 'Can', initial: 'C', accent: '#716550', status: 'joining' },
 ]
-const claims:Claim[] = [
-  {id:1,player:'Ali',role:'Kâhin',quote:'Dün gece Deniz masum çıktı.',tone:'violet'},
-  {id:2,player:'Ayşe',role:'Kâhin',quote:'Ben de Deniz’i gördüm; masum.',tone:'cyan'},
-  {id:3,player:'Mert',role:'Koruyucu',quote:'Dün gece Elif’i korudum.',tone:'gold'},
-  {id:4,player:'Burak',role:'Köylü',quote:'Ben sıradan köylüyüm.',tone:'red'}
+
+const claims: Claim[] = [
+  { id: 1, player: 'Ali', role: 'Kâhin', quote: 'Dün gece Deniz masum çıktı.', tone: 'violet' },
+  { id: 2, player: 'Ayşe', role: 'Kâhin', quote: 'Ben de Deniz’i gördüm; masum.', tone: 'cyan' },
+  { id: 3, player: 'Mert', role: 'Koruyucu', quote: 'Dün gece Elif’i korudum.', tone: 'gold' },
+  { id: 4, player: 'Burak', role: 'Köylü', quote: 'Ben sıradan köylüyüm.', tone: 'red' },
 ]
 
-function Brand(){
-  return <div className="brand"><div className="brand-title"><span>Vampir</span><strong>Köylü</strong></div><div className="brand-ribbon">Sözler, Maskeler, Hayatta Kalanlar...</div></div>
+const roleCounts = countRoles(buildRolePack(players.length))
+
+const roleVisuals: Record<RoleId, { icon: string; title: string; text: string; action: string }> = {
+  vampire: {
+    icon: '🦇',
+    title: 'Vampir',
+    text: 'Gece diğer vampirlerle bir kurban seç. Gündüz kimliğini sakla.',
+    action: 'Kurbanı Seç',
+  },
+  villager: {
+    icon: '♙',
+    title: 'Köylü',
+    text: 'Özel gece gücün yok. Sözleri, oyları ve çelişkileri takip et.',
+    action: 'Geceyi İzle',
+  },
+  seer: {
+    icon: '◉',
+    title: 'Kâhin',
+    text: 'Her gece bir oyuncunun Vampir olup olmadığını gizlice öğren.',
+    action: 'Bu Oyuncuyu Sorgula',
+  },
+  protector: {
+    icon: '⬟',
+    title: 'Koruyucu',
+    text: 'Her gece yaşayan bir oyuncuyu Vampir saldırısından koru.',
+    action: 'Bu Oyuncuyu Koru',
+  },
 }
-function VillageBackdrop(){
-  return <div className="scene" aria-hidden><div className="sky"/><div className="moon"/><div className="mountains"/><div className="castle"/><div className="houses left"/><div className="houses right"/><div className="mist one"/><div className="mist two"/><div className="fire"><i/><b/></div><div className="vignette"/></div>
+
+function Brand() {
+  return (
+    <div className="brand">
+      <div className="brand-title"><span>Vampir</span><strong>Köylü</strong></div>
+      <div className="brand-ribbon">Sözler, Maskeler, Hayatta Kalanlar...</div>
+    </div>
+  )
 }
-function Topbar(){
-  return <header className="topbar"><button>⚙ <span>Ayarlar</span></button><div className="top-spacer"/><div className="profile"><span className="avatar small">A</span><div><b>Ali</b><small>Köyün Sesi</small></div><em>12</em></div><div className="coin">☀ 2.450</div><button>♟</button><button>✉</button></header>
+
+function VillageBackdrop() {
+  return (
+    <div className="scene" aria-hidden>
+      <div className="sky" /><div className="moon" /><div className="mountains" />
+      <div className="castle" /><div className="houses left" /><div className="houses right" />
+      <div className="mist one" /><div className="mist two" />
+      <div className="fire"><i /><b /></div><div className="vignette" />
+    </div>
+  )
 }
-function Lore(){
+
+function Topbar() {
+  return (
+    <header className="topbar">
+      <button>⚙ <span>Ayarlar</span></button>
+      <div className="top-spacer" />
+      <div className="profile">
+        <span className="avatar small">A</span>
+        <div><b>Ali</b><small>Köyün Sesi</small></div><em>12</em>
+      </div>
+      <div className="coin">☀ 2.450</div><button>♟</button><button>✉</button>
+    </header>
+  )
+}
+
+function Lore() {
   return <div className="lore"><span>Gözlemle</span><span>Sorgula</span><span>Çelişkileri Bul</span><span>Doğruyu Keşfet</span></div>
 }
 
-export default function App(){
-  const [screen,setScreen]=useState<Screen>('home')
-  const [selected,setSelected]=useState<number|null>(null)
-  const [tab,setTab]=useState<'claims'|'votes'|'clues'>('claims')
-  const [notes,setNotes]=useState(['Ali ve Ayşe aynı rolü iddia ediyor.','Burak’ın tavırları gergin.'])
-  const [note,setNote]=useState('')
-  const conflict=useMemo(()=>claims.filter(c=>c.role==='Kâhin'),[])
-  const addNote=()=>{const t=note.trim();if(!t)return;setNotes(n=>[...n,t]);setNote('')}
-  return <div className={'app phase-'+screen}><VillageBackdrop/><Topbar/>
-    {screen==='home'&&<Home onLobby={()=>setScreen('lobby')} onQuick={()=>setScreen('day')}/>}
-    {screen==='lobby'&&<Lobby onBack={()=>setScreen('home')} onStart={()=>setScreen('day')}/>}
-    {screen==='day'&&<Day selected={selected} setSelected={setSelected} tab={tab} setTab={setTab} notes={notes} note={note} setNote={setNote} addNote={addNote} conflict={conflict} onNight={()=>setScreen('night')}/>}
-    {screen==='night'&&<Night selected={selected} setSelected={setSelected} onDawn={()=>setScreen('day')}/>}
-  </div>
+export default function App() {
+  const [screen, setScreen] = useState<Screen>('home')
+  const [game, setGame] = useState<GameState | null>(null)
+  const [selected, setSelected] = useState<number | null>(null)
+  const [tab, setTab] = useState<'claims' | 'votes' | 'clues'>('claims')
+  const [notes, setNotes] = useState(['Ali ve Ayşe aynı rolü iddia ediyor.', 'Burak’ın tavırları gergin.'])
+  const [note, setNote] = useState('')
+  const conflict = useMemo(() => claims.filter((claim) => claim.role === 'Kâhin'), [])
+
+  const addNote = () => {
+    const text = note.trim()
+    if (!text) return
+    setNotes((current) => [...current, text])
+    setNote('')
+  }
+
+  const launchGame = () => {
+    const next = createGame(players.map(({ id, name }) => ({ id, name })))
+    setGame(next)
+    setSelected(null)
+    setScreen('role')
+  }
+
+  const toFirstNight = () => {
+    if (!game) return
+    setGame(beginNight(game))
+    setSelected(null)
+    setScreen('night')
+  }
+
+  const finishNight = () => {
+    if (!game) return
+    const view = getPrivatePlayerView(game, HUMAN_ID)
+    const self = view.publicPlayers.find((player) => player.id === HUMAN_ID)
+    const action = ROLE_DEFINITIONS[view.selfRole].nightAction
+    let next = game
+
+    if (self?.alive && action) {
+      if (selected === null) return
+      next = submitNightAction(next, HUMAN_ID, selected)
+    }
+
+    next = completeNightWithBots(next, HUMAN_ID)
+    setGame(next)
+    setSelected(null)
+    setScreen(next.winner ? 'end' : 'dawn')
+  }
+
+  const toDiscussion = () => {
+    if (!game) return
+    setGame(beginDiscussion(game))
+    setSelected(null)
+    setScreen('day')
+  }
+
+  const toVoting = () => {
+    if (!game) return
+    setGame(beginVoting(game))
+    setSelected(null)
+    setScreen('vote')
+  }
+
+  const finishVote = () => {
+    if (!game) return
+    const self = game.players.find((player) => player.id === HUMAN_ID)
+    let next = game
+
+    if (self?.alive) {
+      if (selected === null) return
+      next = submitVote(next, HUMAN_ID, selected)
+    }
+
+    next = completeVoteWithBots(next, HUMAN_ID)
+    setGame(next)
+    setSelected(null)
+    setScreen(next.winner ? 'end' : 'vote-result')
+  }
+
+  const toNextNight = () => {
+    if (!game) return
+    setGame(beginNight(game))
+    setSelected(null)
+    setScreen('night')
+  }
+
+  return (
+    <div className={'app phase-' + screen}>
+      <VillageBackdrop /><Topbar />
+      {screen === 'home' && <Home onLobby={() => setScreen('lobby')} onQuick={launchGame} />}
+      {screen === 'lobby' && <Lobby onBack={() => setScreen('home')} onStart={launchGame} />}
+      {screen === 'role' && game && <RoleReveal game={game} onContinue={toFirstNight} />}
+      {screen === 'night' && game && (
+        <Night game={game} selected={selected} setSelected={setSelected} onResolve={finishNight} />
+      )}
+      {screen === 'dawn' && game && <Dawn game={game} onContinue={toDiscussion} />}
+      {screen === 'day' && game && (
+        <Day
+          game={game}
+          selected={selected}
+          setSelected={setSelected}
+          tab={tab}
+          setTab={setTab}
+          notes={notes}
+          note={note}
+          setNote={setNote}
+          addNote={addNote}
+          conflict={conflict}
+          onVote={toVoting}
+        />
+      )}
+      {screen === 'vote' && game && (
+        <Voting game={game} selected={selected} setSelected={setSelected} onResolve={finishVote} />
+      )}
+      {screen === 'vote-result' && game && <VoteResult game={game} onContinue={toNextNight} />}
+      {screen === 'end' && game && <EndScreen game={game} onAgain={launchGame} onHome={() => setScreen('home')} />}
+    </div>
+  )
 }
 
-function Home({onLobby,onQuick}:{onLobby:()=>void;onQuick:()=>void}){
-  return <main className="home"><section><Brand/><div className="menu">
-    <Menu primary icon="⚔" title="Hızlı Oyun" sub="Hemen oyna, yeni insanlarla tanış." onClick={onQuick}/>
-    <Menu icon="⌂" title="Oda Kur" sub="Kendi kurallarınla oyna." onClick={onLobby}/>
-    <Menu icon="♟" title="Odaya Katıl" sub="Arkadaşlarının odasına katıl." onClick={onLobby}/>
-    <Menu icon="▤" title="Nasıl Oynanır?" sub="Kuralları öğren, ustalaş."/>
-  </div></section><aside className="home-side"><div className="promo"><div className="portrait-big">V</div><div><small>YENİ SEZON</small><h2>Karanlık geri dönüyor.</h2><p>Daha fazla strateji, daha keskin blöfler, daha zor kararlar.</p><button>Detayları Gör ›</button></div></div><div className="invite"><div className="face-row"><i>A</i><i>Y</i><i>Z</i><i>K</i></div><h3>Arkadaşlarını Davet Et</h3><p>Aynı masada, farklı gerçekler.</p><button>♟ Davet Et</button></div><blockquote>“Kim dost, kim düşman?<br/>Doğru soruları sor...”</blockquote></aside><Lore/></main>
-}
-function Menu({icon,title,sub,onClick,primary}:{icon:string;title:string;sub:string;onClick?:()=>void;primary?:boolean}){
-  return <button className={'menu-btn '+(primary?'primary':'')} onClick={onClick}><span>{icon}</span><div><b>{title}</b><small>{sub}</small></div><em>›</em></button>
+function Home({ onLobby, onQuick }: { onLobby: () => void; onQuick: () => void }) {
+  return (
+    <main className="home">
+      <section>
+        <Brand />
+        <div className="menu">
+          <Menu primary icon="⚔" title="Hızlı Oyun" sub="Hemen oyna, yeni insanlarla tanış." onClick={onQuick} />
+          <Menu icon="⌂" title="Oda Kur" sub="Kendi kurallarınla oyna." onClick={onLobby} />
+          <Menu icon="♟" title="Odaya Katıl" sub="Arkadaşlarının odasına katıl." onClick={onLobby} />
+          <Menu icon="▤" title="Nasıl Oynanır?" sub="Kuralları öğren, ustalaş." />
+        </div>
+      </section>
+      <aside className="home-side">
+        <div className="promo">
+          <div className="portrait-big">V</div>
+          <div><small>YENİ SEZON</small><h2>Karanlık geri dönüyor.</h2><p>Daha fazla strateji, daha keskin blöfler, daha zor kararlar.</p><button>Detayları Gör ›</button></div>
+        </div>
+        <div className="invite"><div className="face-row"><i>A</i><i>Y</i><i>Z</i><i>K</i></div><h3>Arkadaşlarını Davet Et</h3><p>Aynı masada, farklı gerçekler.</p><button>♟ Davet Et</button></div>
+        <blockquote>“Kim dost, kim düşman?<br />Doğru soruları sor...”</blockquote>
+      </aside>
+      <Lore />
+    </main>
+  )
 }
 
-function Lobby({onBack,onStart}:{onBack:()=>void;onStart:()=>void}){
-  return <main className="lobby"><aside className="lobby-left"><Brand/><button className="back" onClick={onBack}>← Ana menü</button><Lore/></aside><section className="panel lobby-panel"><div className="panel-head"><h1>Oda Lobisi</h1><div className="code"><small>ODA KODU</small><b>VK7M3</b></div><button>⌯ Paylaş</button></div><div className="lobby-grid"><div><h3>Oyuncular <small>(9/10)</small></h3><div className="player-list">{players.map((p,i)=><div className="player-line" key={p.id}><span className="avatar" style={{'--accent':p.accent} as CSSProperties}>{p.initial}</span><div><b>{p.name} {i===0&&<em>♛</em>}</b><small className={p.status}>{p.status==='ready'?'● Hazır':p.status==='joining'?'○ Katılıyor...':'● Hazır Değil'}</small></div><span className="mic">{p.mic?'♬':'♩'}</span><button>•••</button></div>)}<div className="empty">＋ <b>Boş Oyuncu</b><button>♟ Davet Et</button></div></div><div className="chat"><b>Sohbet</b><p><strong>Mert:</strong> Herkese merhaba!</p><p><strong>Ayşe:</strong> Hazırım 🙂</p><p><strong>Burak:</strong> Bu sefer köylüler kazanacak.</p><input placeholder="Mesajını yaz..."/></div></div><div className="settings"><div className="tabs"><button className="active">Oyun Ayarları</button><button>Rol Dağılımı</button></div><div className="mode"><span>🌒</span><div><small>OYUN MODU</small><h2>Klasik Paket</h2><p>Dengeli, sürükleyici, zamansız.</p></div></div><Setting icon="◆" label="Harita" value="Köy Meydanı"/><Setting icon="☀" label="Gündüz Süresi" value="90 saniye"/><Setting icon="☾" label="Gece Süresi" value="60 saniye"/><Setting icon="☵" label="Tartışma" value="Var"/><div className="roles"><h3>Rol Dağılımı</h3><div><Role icon="🦇" name="Vampir" n="2"/><Role icon="♙" name="Köylü" n="5"/><Role icon="◉" name="Kâhin" n="1"/><Role icon="⬟" name="Koruyucu" n="1"/><Role icon="☠" name="Deli" n="1"/></div><label>Rolleri Rastgele Dağıt <input type="checkbox" defaultChecked/></label></div><button className="start" onClick={onStart}>Oyunu Başlat <b>›</b></button></div></div></section></main>
+function Menu({ icon, title, sub, onClick, primary }: { icon: string; title: string; sub: string; onClick?: () => void; primary?: boolean }) {
+  return <button className={'menu-btn ' + (primary ? 'primary' : '')} onClick={onClick}><span>{icon}</span><div><b>{title}</b><small>{sub}</small></div><em>›</em></button>
 }
-function Setting({icon,label,value}:{icon:string;label:string;value:string}){return <div className="setting"><span>{icon}</span><b>{label}</b><button>‹</button><strong>{value}</strong><button>›</button></div>}
-function Role({icon,name,n}:{icon:string;name:string;n:string}){return <div className="role"><span>{icon}</span><b>{name}</b><em>{n}</em></div>}
 
-function Day({selected,setSelected,tab,setTab,notes,note,setNote,addNote,conflict,onNight}:{selected:number|null;setSelected:(n:number|null)=>void;tab:'claims'|'votes'|'clues';setTab:(t:'claims'|'votes'|'clues')=>void;notes:string[];note:string;setNote:(s:string)=>void;addNote:()=>void;conflict:Claim[];onNight:()=>void}){
-  return <main className="game"><section className="council"><Brand/><div className="phase-badge"><b>☀ 3. Gün</b><span>Köy Meclisi</span><small>⌛ Tartışma · 01:18</small></div><div className="ring">{players.slice(0,8).map((p,i)=>{const a=i/8*Math.PI*2-Math.PI/2,x=50+Math.cos(a)*40,y=50+Math.sin(a)*37;return <button key={p.id} className={'seat '+(selected===p.id?'selected':'')} style={{left:x+'%',top:y+'%'}} onClick={()=>setSelected(selected===p.id?null:p.id)}><i>{i+1}</i><span className="avatar player-avatar" style={{'--accent':p.accent} as CSSProperties}>{p.initial}</span><b>{p.name}</b><em>•••</em></button>})}<div className="bonfire"><i/><b/></div></div><Lore/><button className="vote">Bugün kimi oylayacaksın? <b>›</b></button><button className="night-link" onClick={onNight}>Gece demosu →</button></section><aside className="panel deduction"><blockquote>“Aynı köyde, farklı gerçekler...”</blockquote><div className="tabs"><button className={tab==='claims'?'active':''} onClick={()=>setTab('claims')}>İddialar</button><button className={tab==='votes'?'active':''} onClick={()=>setTab('votes')}>Oylama Geçmişi</button><button className={tab==='clues'?'active':''} onClick={()=>setTab('clues')}>Rol İpuçları</button></div>{tab==='claims'&&<Claims conflict={conflict}/>} {tab==='votes'&&<Votes/>} {tab==='clues'&&<Clues/>}<div className="notes"><div><b>▤ Benim Notlarım</b><small>Sadece sana görünür</small></div>{notes.map((n,i)=><label key={i}><input type="checkbox" defaultChecked={i<2}/>{n}</label>)}<div className="note-input"><input value={note} onChange={e=>setNote(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addNote()} placeholder="Not ekle..."/><button onClick={addNote}>＋</button></div></div></aside>{selected&&<Inspector player={players.find(p=>p.id===selected)!} close={()=>setSelected(null)}/>}</main>
+function Lobby({ onBack, onStart }: { onBack: () => void; onStart: () => void }) {
+  return (
+    <main className="lobby">
+      <aside className="lobby-left"><Brand /><button className="back" onClick={onBack}>← Ana menü</button><Lore /></aside>
+      <section className="panel lobby-panel">
+        <div className="panel-head"><h1>Oda Lobisi</h1><div className="code"><small>ODA KODU</small><b>VK7M3</b></div><button>⌯ Paylaş</button></div>
+        <div className="lobby-grid">
+          <div>
+            <h3>Oyuncular <small>({players.length}/10)</small></h3>
+            <div className="player-list">
+              {players.map((player, index) => (
+                <div className="player-line" key={player.id}>
+                  <span className="avatar" style={{ '--accent': player.accent } as CSSProperties}>{player.initial}</span>
+                  <div><b>{player.name} {index === 0 && <em>♛</em>}</b><small className={player.status}>{player.status === 'ready' ? '● Hazır' : player.status === 'joining' ? '○ Katılıyor...' : '● Hazır Değil'}</small></div>
+                  <span className="mic">{player.mic ? '♬' : '♩'}</span><button>•••</button>
+                </div>
+              ))}
+              <div className="empty">＋ <b>Boş Oyuncu</b><button>♟ Davet Et</button></div>
+            </div>
+            <div className="chat"><b>Sohbet</b><p><strong>Mert:</strong> Herkese merhaba!</p><p><strong>Ayşe:</strong> Hazırım 🙂</p><p><strong>Burak:</strong> Bu sefer köylüler kazanacak.</p><input placeholder="Mesajını yaz..." /></div>
+          </div>
+          <div className="settings">
+            <div className="tabs"><button className="active">Oyun Ayarları</button><button>Rol Dağılımı</button></div>
+            <div className="mode"><span>🌒</span><div><small>OYUN MODU</small><h2>Klasik Paket</h2><p>Oyuncu sayısına göre otomatik ve dengeli.</p></div></div>
+            <Setting icon="◆" label="Harita" value="Köy Meydanı" />
+            <Setting icon="☀" label="Gündüz Süresi" value="90 saniye" />
+            <Setting icon="☾" label="Gece Süresi" value="60 saniye" />
+            <Setting icon="☵" label="Tartışma" value="Var" />
+            <div className="roles">
+              <h3>Rol Dağılımı ({players.length} Oyuncu)</h3>
+              <div>
+                <Role icon="🦇" name="Vampir" n={String(roleCounts.vampire)} />
+                <Role icon="♙" name="Köylü" n={String(roleCounts.villager)} />
+                <Role icon="◉" name="Kâhin" n={String(roleCounts.seer)} />
+                <Role icon="⬟" name="Koruyucu" n={String(roleCounts.protector)} />
+              </div>
+              <label>Rolleri güvenli rastgele dağıt <input type="checkbox" checked readOnly /></label>
+            </div>
+            <button className="start" onClick={onStart}>Oyunu Başlat <b>›</b></button>
+          </div>
+        </div>
+      </section>
+    </main>
+  )
 }
-function Claims({conflict}:{conflict:Claim[]}){return <div className="claim-wrap"><div className="claim-list">{claims.map(c=><div className={'claim '+c.tone} key={c.id}><span>{c.player[0]}</span><div><b>{c.player} <em>→ {c.role}</em></b><p>“{c.quote}”</p></div><small>3. Gün</small></div>)}</div><div className="conflict"><h3>⚔ Çelişen İddia</h3><div>{conflict.slice(0,2).map((c,i)=><section key={c.id}><span>{c.player[0]}</span><b>{c.player}<small>{c.role}</small></b>{i===0&&<em>×</em>}</section>)}</div></div></div>}
-function Votes(){return <div className="history">{[['1. Gün','Burak','4 oy'],['2. Gün','Can','5 oy'],['3. Gün','Elif','4 oy']].map(r=><div key={r[0]}><b>{r[0]}</b><span>● ● ● →</span><strong>{r[1]}</strong><small>{r[2]}</small></div>)}</div>}
-function Clues(){return <div className="clues"><p><b>◉ Kâhin iddiası</b><br/>Aynı rol için iki farklı iddia var.</p><p><b>⬟ Koruma iddiası</b><br/>Mert, Elif’i koruduğunu söylüyor.</p><p><b>⚑ Temel kural</b><br/>Sistem doğruyu seçmez; yalnızca açıklanan bilgiyi düzenler.</p></div>}
-function Inspector({player,close}:{player:Player;close:()=>void}){return <div className="inspector"><button onClick={close}>×</button><span className="avatar big" style={{'--accent':player.accent} as CSSProperties}>{player.initial}</span><h2>{player.name}</h2><em>● Hayatta</em><hr/><b>Oylama geçmişi</b><p>1. Gün → Bora</p><p>2. Gün → Ayşe</p><p>3. Gün → Can</p><div><button className="bad">✕ Şüpheli</button><button>? Emin Değilim</button><button className="good">✓ Güveniyorum</button></div></div>}
 
-function Night({selected,setSelected,onDawn}:{selected:number|null;setSelected:(n:number|null)=>void;onDawn:()=>void}){
- const picked=players.find(p=>p.id===selected)
- return <main className="game night-game"><section className="council"><Brand/><div className="phase-badge night"><b>☾ Gece 2</b><span>Köy Uyuyor</span><small>⌛ Rol Aşaması · 00:38</small></div><div className="ring sleeping">{players.slice(0,8).map((p,i)=>{const a=i/8*Math.PI*2-Math.PI/2,x=50+Math.cos(a)*40,y=50+Math.sin(a)*37;return <button key={p.id} className={'seat '+(selected===p.id?'selected':'')} style={{left:x+'%',top:y+'%'}} onClick={()=>setSelected(p.id)}><span className="avatar player-avatar" style={{'--accent':p.accent} as CSSProperties}>{p.initial}</span><b>{p.name}</b><em>zZ</em></button>})}<div className="bonfire low"><i/><b/></div></div><button className="vote blue">Karanlıkta kimin gerçeğini göreceksin? <b>›</b></button></section><aside className="panel role-panel"><blockquote>“Herkes uyur... Ama gerçekler asla.”</blockquote><h1>Rolün</h1><div className="seer-card"><div>◉</div><b>KÂHİN</b></div><section><h2>◉ Kâhin</h2><p>Her gece bir oyuncunun tarafını araştırırsın.</p><em>“Gözlerim karanlıkta da görür.”</em><h3>Hedef Seçimi</h3><p>Bu gece araştırmak istediğin bir oyuncuyu seç.</p><div className={'target '+(picked?'active':'')}><span>{picked?.initial??'?'}</span><b>{picked?.name??'Oyuncu seçilmedi'}</b><em>◉</em></div></section><button className="seer-btn" disabled={!picked} onClick={onDawn}>◉ Bu Oyuncuyu Sorgula</button><small className="hint">Sonuç diğer oyunculara açıklanmaz.</small></aside></main>
+function Setting({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return <div className="setting"><span>{icon}</span><b>{label}</b><button>‹</button><strong>{value}</strong><button>›</button></div>
+}
+
+function Role({ icon, name, n }: { icon: string; name: string; n: string }) {
+  return <div className="role"><span>{icon}</span><b>{name}</b><em>{n}</em></div>
+}
+
+function RoleReveal({ game, onContinue }: { game: GameState; onContinue: () => void }) {
+  const view = getPrivatePlayerView(game, HUMAN_ID)
+  const visual = roleVisuals[view.selfRole]
+  const allies = view.knownVampireIds
+    .map((id) => view.publicPlayers.find((player) => player.id === id)?.name)
+    .filter(Boolean)
+
+  return (
+    <main className="result-shell">
+      <Brand />
+      <section className={'flow-card role-reveal-card role-' + view.selfRole}>
+        <small>ROLÜN</small>
+        <div className="role-emblem">{visual.icon}</div>
+        <h1>{visual.title}</h1>
+        <p>{visual.text}</p>
+        {allies.length > 0 && <div className="secret-line"><b>Diğer Vampir:</b> {allies.join(', ')}</div>}
+        <div className="privacy-note">Bu bilgi yalnızca sana gösterilir.</div>
+        <button className="start" onClick={onContinue}>Hazırım · Geceye Geç <b>›</b></button>
+      </section>
+      <Lore />
+    </main>
+  )
+}
+
+function Day({
+  game,
+  selected,
+  setSelected,
+  tab,
+  setTab,
+  notes,
+  note,
+  setNote,
+  addNote,
+  conflict,
+  onVote,
+}: {
+  game: GameState
+  selected: number | null
+  setSelected: (id: number | null) => void
+  tab: 'claims' | 'votes' | 'clues'
+  setTab: (tab: 'claims' | 'votes' | 'clues') => void
+  notes: string[]
+  note: string
+  setNote: (value: string) => void
+  addNote: () => void
+  conflict: Claim[]
+  onVote: () => void
+}) {
+  const publicPlayers = getPrivatePlayerView(game, HUMAN_ID).publicPlayers
+  const aliveById = new Map(publicPlayers.map((player) => [player.id, player.alive]))
+
+  return (
+    <main className="game">
+      <section className="council">
+        <Brand />
+        <div className="phase-badge"><b>☀ {game.round}. Gün</b><span>Köy Meclisi</span><small>⌛ Tartışma · 01:18</small></div>
+        <div className="ring">
+          {players.slice(0, 8).map((player, index) => {
+            const angle = index / 8 * Math.PI * 2 - Math.PI / 2
+            const x = 50 + Math.cos(angle) * 40
+            const y = 50 + Math.sin(angle) * 37
+            const alive = aliveById.get(player.id) ?? true
+            return (
+              <button
+                key={player.id}
+                className={'seat ' + (selected === player.id ? 'selected ' : '') + (!alive ? 'dead-seat' : '')}
+                style={{ left: x + '%', top: y + '%' }}
+                onClick={() => setSelected(selected === player.id ? null : player.id)}
+              >
+                <i>{index + 1}</i>
+                <span className="avatar player-avatar" style={{ '--accent': player.accent } as CSSProperties}>{player.initial}</span>
+                <b>{player.name}</b><em>{alive ? '•••' : '☠'}</em>
+              </button>
+            )
+          })}
+          <div className="bonfire"><i /><b /></div>
+        </div>
+        <Lore />
+        <button className="vote" onClick={onVote}>Oylamaya Geç <b>›</b></button>
+      </section>
+      <aside className="panel deduction">
+        <blockquote>“Aynı köyde, farklı gerçekler...”</blockquote>
+        <div className="tabs">
+          <button className={tab === 'claims' ? 'active' : ''} onClick={() => setTab('claims')}>İddialar</button>
+          <button className={tab === 'votes' ? 'active' : ''} onClick={() => setTab('votes')}>Oylama Geçmişi</button>
+          <button className={tab === 'clues' ? 'active' : ''} onClick={() => setTab('clues')}>Rol İpuçları</button>
+        </div>
+        {tab === 'claims' && <Claims conflict={conflict} />}
+        {tab === 'votes' && <Votes />}
+        {tab === 'clues' && <Clues />}
+        <div className="notes">
+          <div><b>▤ Benim Notlarım</b><small>Sadece sana görünür</small></div>
+          {notes.map((item, index) => <label key={index}><input type="checkbox" defaultChecked={index < 2} />{item}</label>)}
+          <div className="note-input"><input value={note} onChange={(event) => setNote(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && addNote()} placeholder="Not ekle..." /><button onClick={addNote}>＋</button></div>
+        </div>
+      </aside>
+      {selected && <Inspector player={players.find((player) => player.id === selected)!} alive={aliveById.get(selected) ?? true} close={() => setSelected(null)} />}
+    </main>
+  )
+}
+
+function Claims({ conflict }: { conflict: Claim[] }) {
+  return (
+    <div className="claim-wrap">
+      <div className="claim-list">
+        {claims.map((claim) => (
+          <div className={'claim ' + claim.tone} key={claim.id}>
+            <span>{claim.player[0]}</span>
+            <div><b>{claim.player} <em>→ {claim.role}</em></b><p>“{claim.quote}”</p></div>
+            <small>3. Gün</small>
+          </div>
+        ))}
+      </div>
+      <div className="conflict">
+        <h3>⚔ Çelişen İddia</h3>
+        <div>
+          {conflict.slice(0, 2).map((claim, index) => (
+            <section key={claim.id}><span>{claim.player[0]}</span><b>{claim.player}<small>{claim.role}</small></b>{index === 0 && <em>×</em>}</section>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Votes() {
+  return <div className="history">{[['1. Gün', 'Burak', '4 oy'], ['2. Gün', 'Can', '5 oy'], ['3. Gün', 'Elif', '4 oy']].map((row) => <div key={row[0]}><b>{row[0]}</b><span>● ● ● →</span><strong>{row[1]}</strong><small>{row[2]}</small></div>)}</div>
+}
+
+function Clues() {
+  return <div className="clues"><p><b>◉ Kâhin iddiası</b><br />Aynı rol için iki farklı iddia var.</p><p><b>⬟ Koruma iddiası</b><br />Mert, Elif’i koruduğunu söylüyor.</p><p><b>⚑ Temel kural</b><br />Sistem doğruyu seçmez; yalnızca açıklanan bilgiyi düzenler.</p></div>
+}
+
+function Inspector({ player, alive, close }: { player: Player; alive: boolean; close: () => void }) {
+  return (
+    <div className="inspector">
+      <button onClick={close}>×</button>
+      <span className="avatar big" style={{ '--accent': player.accent } as CSSProperties}>{player.initial}</span>
+      <h2>{player.name}</h2><em>{alive ? '● Hayatta' : '☠ Öldü'}</em><hr />
+      <b>Oylama geçmişi</b><p>1. Gün → Bora</p><p>2. Gün → Ayşe</p><p>3. Gün → Can</p>
+      <div><button className="bad">✕ Şüpheli</button><button>? Emin Değilim</button><button className="good">✓ Güveniyorum</button></div>
+    </div>
+  )
+}
+
+function Night({
+  game,
+  selected,
+  setSelected,
+  onResolve,
+}: {
+  game: GameState
+  selected: number | null
+  setSelected: (id: number | null) => void
+  onResolve: () => void
+}) {
+  const view = getPrivatePlayerView(game, HUMAN_ID)
+  const visual = roleVisuals[view.selfRole]
+  const self = view.publicPlayers.find((player) => player.id === HUMAN_ID)
+  const action = ROLE_DEFINITIONS[view.selfRole].nightAction
+  const targets = self?.alive && action ? validNightTargets(game, HUMAN_ID) : []
+  const targetIds = new Set(targets.map((target) => target.id))
+  const picked = targets.find((target) => target.id === selected)
+  const canAct = !self?.alive || action === null || selected !== null
+
+  return (
+    <main className="game night-game">
+      <section className="council">
+        <Brand />
+        <div className="phase-badge night"><b>☾ Gece {game.round}</b><span>Köy Uyuyor</span><small>⌛ Rol Aşaması · 00:38</small></div>
+        <div className="ring sleeping">
+          {players.slice(0, 8).map((player, index) => {
+            const angle = index / 8 * Math.PI * 2 - Math.PI / 2
+            const x = 50 + Math.cos(angle) * 40
+            const y = 50 + Math.sin(angle) * 37
+            const enabled = targetIds.has(player.id)
+            return (
+              <button
+                key={player.id}
+                disabled={!enabled}
+                className={'seat ' + (selected === player.id ? 'selected ' : '') + (!enabled ? 'night-disabled' : '')}
+                style={{ left: x + '%', top: y + '%' }}
+                onClick={() => enabled && setSelected(player.id)}
+              >
+                <span className="avatar player-avatar" style={{ '--accent': player.accent } as CSSProperties}>{player.initial}</span>
+                <b>{player.name}</b><em>{enabled ? '◌' : 'zZ'}</em>
+              </button>
+            )
+          })}
+          <div className="bonfire low"><i /><b /></div>
+        </div>
+        <button className="vote blue">{action ? 'Karanlıkta hedefini seç.' : 'Bu gece yalnızca gözlemliyorsun.'} <b>›</b></button>
+      </section>
+      <aside className="panel role-panel">
+        <blockquote>“Herkes uyur... Ama gerçekler asla.”</blockquote>
+        <h1>Rolün</h1>
+        <div className={'seer-card role-card-' + view.selfRole}><div>{visual.icon}</div><b>{visual.title.toLocaleUpperCase('tr-TR')}</b></div>
+        <section>
+          <h2>{visual.icon} {visual.title}</h2><p>{visual.text}</p>
+          {view.selfRole === 'vampire' && view.knownVampireIds.length > 0 && (
+            <em>Diğer Vampir: {view.knownVampireIds.map((id) => view.publicPlayers.find((player) => player.id === id)?.name).filter(Boolean).join(', ')}</em>
+          )}
+          <h3>{action ? 'Hedef Seçimi' : 'Gece Bekleyişi'}</h3>
+          <p>{action ? 'Yalnızca geçerli hedefler seçilebilir.' : 'Özel bir gece aksiyonun yok.'}</p>
+          <div className={'target ' + (picked ? 'active' : '')}><span>{picked?.name[0] ?? '•'}</span><b>{picked?.name ?? (action ? 'Oyuncu seçilmedi' : 'Gece devam ediyor')}</b><em>{visual.icon}</em></div>
+        </section>
+        <button className="seer-btn" disabled={!canAct} onClick={onResolve}>{visual.icon} {self?.alive ? visual.action : 'Hayalet Olarak İzle'}</button>
+        <small className="hint">Gerçek roller diğer oyunculara açıklanmaz.</small>
+      </aside>
+    </main>
+  )
+}
+
+function Dawn({ game, onContinue }: { game: GameState; onContinue: () => void }) {
+  const victim = game.lastNight?.victimId
+    ? players.find((player) => player.id === game.lastNight?.victimId)
+    : null
+
+  return (
+    <main className="result-shell dawn-shell">
+      <Brand />
+      <section className="flow-card dawn-card">
+        <small>🌅 {game.round}. GÜN</small>
+        <h1>{victim ? 'Köy bir eksik uyandı.' : 'Bu gece kimse ölmedi.'}</h1>
+        {victim ? <div className="dawn-victim"><span className="avatar big" style={{ '--accent': victim.accent } as CSSProperties}>{victim.initial}</span><b>{victim.name}</b><em>gece öldürüldü</em></div> : <div className="quiet-night">Köy meydanı alışılmadık derecede sessiz.</div>}
+        <p>Gece aksiyonlarının ayrıntıları gizli kalır. Köylüler yalnızca sabah gördükleri sonucu bilir.</p>
+        <button className="start" onClick={onContinue}>Köy Meclisine Git <b>›</b></button>
+      </section>
+      <Lore />
+    </main>
+  )
+}
+
+function Voting({
+  game,
+  selected,
+  setSelected,
+  onResolve,
+}: {
+  game: GameState
+  selected: number | null
+  setSelected: (id: number | null) => void
+  onResolve: () => void
+}) {
+  const self = game.players.find((player) => player.id === HUMAN_ID)
+  const targets = game.players.filter((player) => player.alive && player.id !== HUMAN_ID)
+
+  return (
+    <main className="result-shell voting-shell">
+      <Brand />
+      <section className="flow-card voting-card">
+        <small>🗳 {game.round}. GÜN OYLAMASI</small>
+        <h1>{self?.alive ? 'Köyden kimi göndermek istiyorsun?' : 'Oylamayı hayalet olarak izliyorsun.'}</h1>
+        <div className="vote-grid">
+          {targets.map((target) => {
+            const visual = players.find((player) => player.id === target.id)!
+            return <button key={target.id} className={selected === target.id ? 'picked' : ''} onClick={() => self?.alive && setSelected(target.id)}><span className="avatar" style={{ '--accent': visual.accent } as CSSProperties}>{visual.initial}</span><b>{target.name}</b><em>{selected === target.id ? '✓' : '○'}</em></button>
+          })}
+        </div>
+        <button className="start" disabled={Boolean(self?.alive) && selected === null} onClick={onResolve}>{self?.alive ? 'Oyumu Kilitle' : 'Oylama Sonucunu Gör'} <b>›</b></button>
+      </section>
+    </main>
+  )
+}
+
+function VoteResult({ game, onContinue }: { game: GameState; onContinue: () => void }) {
+  const eliminated = game.lastVote?.eliminatedId
+    ? players.find((player) => player.id === game.lastVote?.eliminatedId)
+    : null
+
+  return (
+    <main className="result-shell">
+      <Brand />
+      <section className="flow-card vote-result-card">
+        <small>KÖY KARARINI VERDİ</small>
+        <h1>{eliminated ? eliminated.name : 'Kimse gönderilmedi'}</h1>
+        <div className="result-symbol">{game.lastVote?.tied ? '⚖' : '🗳'}</div>
+        <p>{game.lastVote?.tied ? 'Oylar eşit kaldı. Bu gün eleme olmadı.' : 'Rolü şimdilik açıklanmadı. Gerçek, maç sonunda ortaya çıkacak.'}</p>
+        <button className="start" onClick={onContinue}>Yeni Geceye Geç <b>›</b></button>
+      </section>
+    </main>
+  )
+}
+
+function EndScreen({ game, onAgain, onHome }: { game: GameState; onAgain: () => void; onHome: () => void }) {
+  return (
+    <main className="end-screen">
+      <Brand />
+      <section className="panel end-panel">
+        <small>KAZANAN</small>
+        <h1>{game.winner === 'vampire' ? 'VAMPİRLER' : 'KÖYLÜLER'}</h1>
+        <p>Perde kalktı. Artık tüm gerçek roller görülebilir.</p>
+        <div className="end-roles">
+          {game.players.map((player) => {
+            const visual = roleVisuals[player.secretRole]
+            const portrait = players.find((item) => item.id === player.id)!
+            return <div key={player.id} className={'end-role ' + (player.alive ? 'alive' : 'dead')}><span className="avatar" style={{ '--accent': portrait.accent } as CSSProperties}>{portrait.initial}</span><b>{player.name}</b><em>{visual.icon} {visual.title}</em><small>{player.alive ? 'HAYATTA' : 'ÖLDÜ'}</small></div>
+          })}
+        </div>
+        <div className="end-actions"><button className="start" onClick={onAgain}>↻ Tekrar Oyna</button><button className="back" onClick={onHome}>⌂ Ana Menü</button></div>
+      </section>
+    </main>
+  )
 }
