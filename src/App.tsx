@@ -1782,6 +1782,7 @@ function GhostTransition({
   const self = game.players.find((player) => player.id === HUMAN_ID)
   const portrait = players.find((player) => player.id === HUMAN_ID)!
   const access = getChatAccess(game, HUMAN_ID)
+  const [activeChannel, setActiveChannel] = useState<ChatChannel>('ghost')
 
   return (
     <main className="ghost-transition">
@@ -1823,7 +1824,8 @@ function GhostTransition({
           game={game}
           viewerId={HUMAN_ID}
           onSend={onSendChat}
-          activeChannel="ghost"
+          activeChannel={activeChannel}
+          onActiveChannelChange={setActiveChannel}
           compact
         />
       </aside>
