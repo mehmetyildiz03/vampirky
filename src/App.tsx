@@ -634,8 +634,9 @@ function Lobby({ onBack, onStart }: { onBack: () => void; onStart: () => void })
             <div className="tabs"><button className="active">Oyun Ayarları</button><button>Rol Dağılımı</button></div>
             <div className="mode"><span>🌒</span><div><small>OYUN MODU</small><h2>Klasik Paket</h2><p>Oyuncu sayısına göre otomatik ve dengeli.</p></div></div>
             <Setting icon="◆" label="Harita" value="Köy Meydanı" />
-            <Setting icon="☀" label="Gündüz Süresi" value="90 saniye" />
-            <Setting icon="☾" label="Gece Süresi" value="60 saniye" />
+            <Setting icon="☀" label="Tartışma Süresi" value={PHASE_DURATIONS_SECONDS.discussion + ' saniye'} />
+            <Setting icon="☾" label="Gece Süresi" value={PHASE_DURATIONS_SECONDS.night + ' saniye'} />
+            <Setting icon="🗳" label="Oylama Süresi" value={PHASE_DURATIONS_SECONDS.voting + ' saniye'} />
             <Setting icon="☵" label="Tartışma" value="Var" />
             <div className="roles">
               <h3>Rol Dağılımı ({players.length} Oyuncu)</h3>
@@ -664,11 +665,6 @@ function Role({ icon, name, n }: { icon: string; name: string; n: string }) {
 }
 
 function RoleReveal({ game, onContinue }: { game: GameState; onContinue: () => void }) {
-  const nightSeconds = usePhaseCountdown(
-    PHASE_DURATIONS_SECONDS.night,
-    `night-${game.round}`,
-    onTimeout,
-  )
   const view = getPrivatePlayerView(game, HUMAN_ID)
   const visual = roleVisuals[view.selfRole]
   const allies = view.knownVampireIds
@@ -1892,6 +1888,11 @@ function Night({
   onSendChat: (channel: ChatChannel, text: string) => void
   onMarkChatRead: (channel: ChatChannel, messageId: number) => void
 }) {
+  const nightSeconds = usePhaseCountdown(
+    PHASE_DURATIONS_SECONDS.night,
+    `night-${game.round}`,
+    onTimeout,
+  )
   const view = getPrivatePlayerView(game, HUMAN_ID)
   const visual = roleVisuals[view.selfRole]
   const self = view.publicPlayers.find((player) => player.id === HUMAN_ID)
