@@ -22,8 +22,11 @@ import {
 import { completeNightWithBots, completeVoteWithBots } from './game/demo'
 import { ROLE_DEFINITIONS, buildRolePack, countRoles } from './game/roles'
 import {
+  addPrivatePlayerNote,
   createPrivateDeductionState,
   getDeductionMark,
+  getPrivatePlayerNotes,
+  removePrivatePlayerNote,
   setDeductionMark,
 } from './game/deduction'
 import type { DeductionMark, PrivateDeductionState } from './game/deduction'
@@ -138,7 +141,7 @@ export default function App() {
   )
   const [selected, setSelected] = useState<number | null>(null)
   const [tab, setTab] = useState<'claims' | 'votes' | 'clues'>('claims')
-  const [notes, setNotes] = useState(['Ali ve Ayşe aynı rolü iddia ediyor.', 'Burak’ın tavırları gergin.'])
+  const [notes, setNotes] = useState<string[]>([])
   const [note, setNote] = useState('')
   const [claimComposerOpen, setClaimComposerOpen] = useState(false)
   const [claimKind, setClaimKind] = useState<ClaimKind>('role')
@@ -232,6 +235,18 @@ export default function App() {
     setDeduction((current) => setDeductionMark(current, playerId, mark))
   }
 
+  const addPrivateNote = (playerId: number, round: number, text: string) => {
+    setDeduction((current) =>
+      addPrivatePlayerNote(current, playerId, round, text),
+    )
+  }
+
+  const removePrivateNote = (playerId: number, noteId: number) => {
+    setDeduction((current) =>
+      removePrivatePlayerNote(current, playerId, noteId),
+    )
+  }
+
   const toFirstNight = () => {
     if (!game) return
     setGame(beginNight(game))
@@ -320,6 +335,8 @@ export default function App() {
           onWithdrawClaim={removeClaim}
           deduction={deduction}
           onDeductionChange={updateDeductionMark}
+          onAddPrivateNote={addPrivateNote}
+          onRemovePrivateNote={removePrivateNote}
         />
       )}
       {claimComposerOpen && game && (
@@ -476,6 +493,8 @@ function Day({
   onWithdrawClaim,
   deduction,
   onDeductionChange,
+  onAddPrivateNote,
+  onRemovePrivateNote,
 }: {
   game: GameState
   selected: number | null
@@ -491,6 +510,8 @@ function Day({
   onWithdrawClaim: (claimId: number) => void
   deduction: PrivateDeductionState
   onDeductionChange: (playerId: number, mark: DeductionMark) => void
+  onAddPrivateNote: (playerId: number, round: number, text: string) => void
+  onRemovePrivateNote: (playerId: number, noteId: number) => void
 }) {
   const publicPlayers = getPrivatePlayerView(game, HUMAN_ID).publicPlayers
   const aliveById = new Map(publicPlayers.map((player) => [player.id, player.alive]))
@@ -561,8 +582,11 @@ function Day({
           player={players.find((player) => player.id === selected)!}
           alive={aliveById.get(selected) ?? true}
           deductionMark={getDeductionMark(deduction, selected)}
+          privateNotes={getPrivatePlayerNotes(deduction, selected)}
           isSelf={selected === HUMAN_ID}
           onDeductionChange={(mark) => onDeductionChange(selected, mark)}
+          onAddPrivateNote={(text) => onAddPrivateNote(selected, game.round, text)}
+          onRemovePrivateNote={(noteId) => onRemovePrivateNote(selected, noteId)}
           close={() => setSelected(null)}
         />
       )}
@@ -900,19 +924,33 @@ function Inspector({
   player,
   alive,
   deductionMark,
+  privateNotes,
   isSelf,
   onDeductionChange,
+  onAddPrivateNote,
+  onRemovePrivateNote,
   close,
 }: {
   game: GameState
   player: Player
   alive: boolean
   deductionMark: DeductionMark
+  privateNotes: ReturnType<typeof getPrivatePlayerNotes>
   isSelf: boolean
   onDeductionChange: (mark: DeductionMark) => void
+  onAddPrivateNote: (text: string) => void
+  onRemovePrivateNote: (noteId: number) => void
   close: () => void
 }) {
+  const [privateNoteDraft, setPrivateNoteDraft] = useState('')
   const timeline = [...getPlayerTimeline(game, player.id)].reverse()
+
+  const savePrivateNote = () => {
+    const text = privateNoteDraft.trim()
+    if (!text || isSelf) return
+    onAddPrivateNote(text)
+    setPrivateNoteDraft('')
+  }
 
   const describeClaim = (claim: StructuredClaim) => {
     if (claim.kind === 'role') {
@@ -978,6 +1016,48 @@ function Inspector({
           ✓ Güveniyorum
         </button>
       </div>
+
+      <section className="private-player-notes">
+        <header>
+          <div>
+            <b>Özel Notların</b>
+            <small>{isSelf ? 'Kendi oyuncun için özel not tutulmaz' : 'Sadece sana görünür · kamuya açık geçmişe eklenmez'}</small>
+          </div>
+          <span>{privateNotes.length}</span>
+        </header>
+
+        {!isSelf && (
+          <div className="private-note-compose">
+            <textarea
+              value={privateNoteDraft}
+              onChange={(event) => setPrivateNoteDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  savePrivateNote()
+                }
+              }}
+              placeholder="Bu oyuncu hakkında özel not..."
+              maxLength={220}
+            />
+            <button disabled={!privateNoteDraft.trim()} onClick={savePrivateNote}>＋</button>
+          </div>
+        )}
+
+        {privateNotes.length > 0 && (
+          <div className="private-note-list">
+            {[...privateNotes].reverse().map((note) => (
+              <article key={note.id}>
+                <div>
+                  <small>{note.round}. Gün</small>
+                  <p>{note.text}</p>
+                </div>
+                <button title="Özel notu sil" onClick={() => onRemovePrivateNote(note.id)}>×</button>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       <div className="timeline-head">
         <div><b>Davranış Geçmişi</b><small>İddialar, beyanlar ve nihai oylar</small></div>
