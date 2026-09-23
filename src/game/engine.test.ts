@@ -447,6 +447,7 @@ describe('chat sourced claims', () => {
     expect(game.claims.at(-1)).toMatchObject({
       claimantId: author.id,
       sourceMessageId: messageId,
+      round: 1,
     })
   })
 })

@@ -172,7 +172,11 @@ export default function App() {
 
   const openClaimComposer = () => {
     if (!game) return
+    const self = game.players.find((player) => player.id === HUMAN_ID)
+    if (!self?.alive) return
     setClaimSourceMessageId(null)
+    setClaimQuote('')
+    setClaimStatement('')
     const living = game.players.filter((player) => player.alive)
     if (!living.some((player) => player.id === claimantId) && living[0]) {
       setClaimantId(living[0].id)
@@ -185,6 +189,8 @@ export default function App() {
 
   const openClaimFromMessage = (messageId: number) => {
     if (!game) return
+    const self = game.players.find((player) => player.id === HUMAN_ID)
+    if (!self?.alive) return
     const message = game.chatMessages.find((candidate) => candidate.id === messageId)
     if (!message || message.channel !== 'village') return
 
@@ -197,6 +203,8 @@ export default function App() {
 
   const addStructuredClaim = () => {
     if (!game) return
+    const self = game.players.find((player) => player.id === HUMAN_ID)
+    if (!self?.alive) return
 
     try {
       let next = game
@@ -257,7 +265,16 @@ export default function App() {
 
   const removeClaim = (claimId: number) => {
     if (!game) return
+    const self = game.players.find((player) => player.id === HUMAN_ID)
+    if (!self?.alive) return
     setGame(withdrawClaim(game, claimId))
+  }
+
+  const closeClaimComposer = () => {
+    setClaimComposerOpen(false)
+    setClaimSourceMessageId(null)
+    setClaimQuote('')
+    setClaimStatement('')
   }
 
   const sendHumanChat = (channel: ChatChannel, text: string) => {
@@ -277,6 +294,7 @@ export default function App() {
     )
     setSelected(null)
     setGhostReturnScreen('dawn')
+    setChatLastRead({ village: 0, vampire: 0, ghost: 0 })
     setScreen('role')
   }
 
@@ -393,6 +411,7 @@ export default function App() {
           setSelected={setSelected}
           onResolve={finishNight}
           onSendChat={sendHumanChat}
+          onMarkChatRead={markChatRead}
         />
       )}
       {screen === 'dawn' && game && <Dawn game={game} onContinue={toDiscussion} />}
@@ -401,6 +420,7 @@ export default function App() {
           game={game}
           cause={ghostReturnScreen === 'dawn' ? 'night' : 'vote'}
           onSendChat={sendHumanChat}
+          onMarkChatRead={markChatRead}
           onContinue={() => setScreen(ghostReturnScreen)}
         />
       )}
@@ -425,6 +445,8 @@ export default function App() {
           onRemovePrivateNote={removePrivateNote}
           onSendChat={sendHumanChat}
           onClaimFromMessage={openClaimFromMessage}
+          chatLastRead={chatLastRead}
+          onMarkChatRead={markChatRead}
         />
       )}
       {claimComposerOpen && game && (
@@ -447,7 +469,7 @@ export default function App() {
           setAction={setClaimAction}
           setSuspectedRole={setClaimSuspectedRole}
           setQuote={setClaimQuote}
-          onClose={() => setClaimComposerOpen(false)}
+          onClose={closeClaimComposer}
           onSave={addStructuredClaim}
         />
       )}
@@ -587,6 +609,8 @@ function Day({
   onRemovePrivateNote,
   onSendChat,
   onClaimFromMessage,
+  chatLastRead,
+  onMarkChatRead,
 }: {
   game: GameState
   selected: number | null
@@ -607,6 +631,8 @@ function Day({
   onRemovePrivateNote: (playerId: number, noteId: number) => void
   onSendChat: (channel: ChatChannel, text: string) => void
   onClaimFromMessage: (messageId: number) => void
+  chatLastRead: Record<ChatChannel, number>
+  onMarkChatRead: (channel: ChatChannel, messageId: number) => void
 }) {
   const [panelMode, setPanelMode] = useState<'chat' | 'deduction'>('chat')
   const [chatChannel, setChatChannel] = useState<ChatChannel>(() =>
@@ -620,6 +646,7 @@ function Day({
   const [chatFocusMessageId, setChatFocusMessageId] = useState<number | null>(null)
   const publicPlayers = getPrivatePlayerView(game, HUMAN_ID).publicPlayers
   const aliveById = new Map(publicPlayers.map((player) => [player.id, player.alive]))
+  const viewerAlive = aliveById.get(HUMAN_ID) ?? false
 
   const activeClaimCount = getActiveClaims(game).length
   const voteRoundCount = new Set(getVoteHistory(game).map((vote) => vote.round)).size
@@ -719,11 +746,11 @@ function Day({
             game={game}
             viewerId={HUMAN_ID}
             onSend={onSendChat}
-            onClaimFromMessage={onClaimFromMessage}
+            onClaimFromMessage={viewerAlive ? onClaimFromMessage : undefined}
             activeChannel={chatChannel}
             onActiveChannelChange={setChatChannel}
             unreadByChannel={unreadByChannel}
-            onMarkRead={markChatRead}
+            onMarkRead={onMarkChatRead}
             focusMessageId={chatFocusMessageId}
             onFocusHandled={() => setChatFocusMessageId(null)}
           />
@@ -755,6 +782,7 @@ function Day({
               onOpenComposer={onOpenClaimComposer}
               onWithdrawClaim={onWithdrawClaim}
               onOpenSourceMessage={openSourceMessage}
+              canMutate={viewerAlive}
             />
           )}
           {tab === 'votes' && <Votes game={game} />}
@@ -876,13 +904,18 @@ function ChatPanel({
       `[data-message-id="${focusMessageId}"]`,
     )
     if (!target) return
+    stickToBottomRef.current = false
     target.scrollIntoView({ block: 'center', behavior: 'smooth' })
     setHighlightedMessageId(focusMessageId)
     onMarkRead?.(selectedChannel, focusMessageId)
     onFocusHandled?.()
+  }, [focusMessageId, selectedChannel, onFocusHandled, onMarkRead])
+
+  useEffect(() => {
+    if (highlightedMessageId === null) return
     const timeout = window.setTimeout(() => setHighlightedMessageId(null), 1800)
     return () => window.clearTimeout(timeout)
-  }, [focusMessageId, selectedChannel, onFocusHandled, onMarkRead])
+  }, [highlightedMessageId])
 
   const handleFeedScroll = () => {
     const feed = feedRef.current
@@ -1059,11 +1092,13 @@ function Claims({
   onOpenComposer,
   onWithdrawClaim,
   onOpenSourceMessage,
+  canMutate,
 }: {
   game: GameState
   onOpenComposer: () => void
   onWithdrawClaim: (claimId: number) => void
   onOpenSourceMessage: (messageId: number) => void
+  canMutate: boolean
 }) {
   const groups = groupRoleClaims(game)
   const socialClaims = getActiveClaims(game)
@@ -1077,8 +1112,13 @@ function Claims({
           <b>İddia Defteri</b>
           <small>Sözleri düzenler; doğruyu seçmez.</small>
         </div>
-        <button onClick={onOpenComposer}>＋ Kayıt Ekle</button>
+        {canMutate && <button onClick={onOpenComposer}>＋ Kayıt Ekle</button>}
       </div>
+      {!canMutate && (
+        <div className="claim-readonly">
+          ☠ Hayalet modunda kamuya açık iddia kayıtları değiştirilemez.
+        </div>
+      )}
 
       <div className="claim-section-title">
         <b>Rol İddiaları</b>
@@ -1124,7 +1164,7 @@ function Claims({
                           )}
                           {claim.quote && <p>“{claim.quote}”</p>}
                         </div>
-                        <button title="İddiayı geri çek" onClick={() => onWithdrawClaim(claim.id)}>↶</button>
+                        {canMutate && <button title="İddiayı geri çek" onClick={() => onWithdrawClaim(claim.id)}>↶</button>}
                       </article>
                     )
                   })}
@@ -1179,7 +1219,7 @@ function Claims({
                   {claim.kind === 'information' && !target && <p>{claim.statement}</p>}
                   {claim.quote && <blockquote>“{claim.quote}”</blockquote>}
                 </div>
-                <button title="Kaydı geri çek" onClick={() => onWithdrawClaim(claim.id)}>↶</button>
+                {canMutate && <button title="Kaydı geri çek" onClick={() => onWithdrawClaim(claim.id)}>↶</button>}
               </article>
             )
           })}
@@ -1695,12 +1735,14 @@ function Night({
   setSelected,
   onResolve,
   onSendChat,
+  onMarkChatRead,
 }: {
   game: GameState
   selected: number | null
   setSelected: (id: number | null) => void
   onResolve: () => void
   onSendChat: (channel: ChatChannel, text: string) => void
+  onMarkChatRead: (channel: ChatChannel, messageId: number) => void
 }) {
   const view = getPrivatePlayerView(game, HUMAN_ID)
   const visual = roleVisuals[view.selfRole]
@@ -1708,6 +1750,7 @@ function Night({
   const action = ROLE_DEFINITIONS[view.selfRole].nightAction
   const targets = self?.alive && action ? validNightTargets(game, HUMAN_ID) : []
   const targetIds = new Set(targets.map((target) => target.id))
+  const aliveById = new Map(view.publicPlayers.map((player) => [player.id, player.alive]))
   const picked = targets.find((target) => target.id === selected)
   const canAct = !self?.alive || action === null || selected !== null
   const nightChatAccess = getChatAccess(game, HUMAN_ID)
@@ -1726,16 +1769,17 @@ function Night({
             const x = 50 + Math.cos(angle) * 40
             const y = 50 + Math.sin(angle) * 37
             const enabled = targetIds.has(player.id)
+            const alive = aliveById.get(player.id) ?? true
             return (
               <button
                 key={player.id}
                 disabled={!enabled}
-                className={'seat ' + (selected === player.id ? 'selected ' : '') + (!enabled ? 'night-disabled' : '')}
+                className={'seat ' + (selected === player.id ? 'selected ' : '') + (!alive ? 'dead-seat ' : '') + (!enabled ? 'night-disabled' : '')}
                 style={{ left: x + '%', top: y + '%' }}
                 onClick={() => enabled && setSelected(player.id)}
               >
                 <span className="avatar player-avatar" style={{ '--accent': player.accent } as CSSProperties}>{player.initial}</span>
-                <b>{player.name}</b><em>{enabled ? '◌' : 'zZ'}</em>
+                <b>{player.name}</b><em>{!alive ? '☠' : enabled ? '◌' : 'zZ'}</em>
               </button>
             )
           })}
@@ -1760,7 +1804,13 @@ function Night({
         <small className="hint">Gerçek roller diğer oyunculara açıklanmaz.</small>
         {nightChatAvailable && (
           <div className="night-chat">
-            <ChatPanel game={game} viewerId={HUMAN_ID} onSend={onSendChat} compact />
+            <ChatPanel
+              game={game}
+              viewerId={HUMAN_ID}
+              onSend={onSendChat}
+              onMarkRead={onMarkChatRead}
+              compact
+            />
           </div>
         )}
       </aside>
@@ -1772,11 +1822,13 @@ function GhostTransition({
   game,
   cause,
   onSendChat,
+  onMarkChatRead,
   onContinue,
 }: {
   game: GameState
   cause: 'night' | 'vote'
   onSendChat: (channel: ChatChannel, text: string) => void
+  onMarkChatRead: (channel: ChatChannel, messageId: number) => void
   onContinue: () => void
 }) {
   const self = game.players.find((player) => player.id === HUMAN_ID)
@@ -1826,6 +1878,7 @@ function GhostTransition({
           onSend={onSendChat}
           activeChannel={activeChannel}
           onActiveChannelChange={setActiveChannel}
+          onMarkRead={onMarkChatRead}
           compact
         />
       </aside>

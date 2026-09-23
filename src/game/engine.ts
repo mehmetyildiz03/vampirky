@@ -403,7 +403,7 @@ export function recordRoleClaim(
   quote?: string,
   sourceMessageId?: number,
 ): GameState {
-  assertClaimCreationAllowed(state, claimantId, sourceMessageId)
+  const sourceMessage = assertClaimCreationAllowed(state, claimantId, sourceMessageId)
 
   const next = cloneState(state)
   const claim: RoleClaim = {
@@ -413,7 +413,7 @@ export function recordRoleClaim(
     role,
     quote: quote?.trim() || undefined,
     sourceMessageId,
-    round: next.round,
+    round: sourceMessage?.round ?? next.round,
     status: 'active',
   }
 
@@ -448,12 +448,12 @@ function assertClaimCreationAllowed(
   state: GameState,
   claimantId: number,
   sourceMessageId?: number,
-): void {
+): ChatMessage | null {
   if (sourceMessageId !== undefined) {
-    assertVillageMessageSource(state, claimantId, sourceMessageId)
-    return
+    return assertVillageMessageSource(state, claimantId, sourceMessageId)
   }
   assertClaimantCanSpeak(state, claimantId)
+  return null
 }
 
 function assertClaimTargetExists(state: GameState, targetId: number): GamePlayer {
@@ -463,12 +463,13 @@ function assertClaimTargetExists(state: GameState, targetId: number): GamePlayer
 function appendStructuredClaim<T extends StructuredClaim>(
   state: GameState,
   claim: Omit<T, 'id' | 'round' | 'status'>,
+  round: number,
 ): GameState {
   const next = cloneState(state)
   next.claims.push({
     ...claim,
     id: next.nextClaimId,
-    round: next.round,
+    round,
     status: 'active',
   } as T)
   next.nextClaimId += 1
@@ -483,7 +484,7 @@ export function recordInformationClaim(
   quote?: string,
   sourceMessageId?: number,
 ): GameState {
-  assertClaimCreationAllowed(state, claimantId, sourceMessageId)
+  const sourceMessage = assertClaimCreationAllowed(state, claimantId, sourceMessageId)
   assertClaimTargetExists(state, targetId)
   const text = statement.trim()
   if (!text) throw new Error('Information claim statement cannot be empty.')
@@ -495,7 +496,7 @@ export function recordInformationClaim(
     statement: text,
     quote: quote?.trim() || undefined,
     sourceMessageId,
-  })
+  }, sourceMessage?.round ?? state.round)
 }
 
 export function recordActionClaim(
@@ -506,7 +507,7 @@ export function recordActionClaim(
   quote?: string,
   sourceMessageId?: number,
 ): GameState {
-  assertClaimCreationAllowed(state, claimantId, sourceMessageId)
+  const sourceMessage = assertClaimCreationAllowed(state, claimantId, sourceMessageId)
   assertClaimTargetExists(state, targetId)
 
   return appendStructuredClaim<ActionClaim>(state, {
@@ -516,7 +517,7 @@ export function recordActionClaim(
     action,
     quote: quote?.trim() || undefined,
     sourceMessageId,
-  })
+  }, sourceMessage?.round ?? state.round)
 }
 
 export function recordAccusationClaim(
@@ -527,7 +528,7 @@ export function recordAccusationClaim(
   quote?: string,
   sourceMessageId?: number,
 ): GameState {
-  assertClaimCreationAllowed(state, claimantId, sourceMessageId)
+  const sourceMessage = assertClaimCreationAllowed(state, claimantId, sourceMessageId)
   assertClaimTargetExists(state, targetId)
 
   return appendStructuredClaim<AccusationClaim>(state, {
@@ -537,7 +538,7 @@ export function recordAccusationClaim(
     suspectedRole,
     quote: quote?.trim() || undefined,
     sourceMessageId,
-  })
+  }, sourceMessage?.round ?? state.round)
 }
 
 export function recordDefenseClaim(
@@ -547,7 +548,7 @@ export function recordDefenseClaim(
   quote?: string,
   sourceMessageId?: number,
 ): GameState {
-  assertClaimCreationAllowed(state, claimantId, sourceMessageId)
+  const sourceMessage = assertClaimCreationAllowed(state, claimantId, sourceMessageId)
   assertClaimTargetExists(state, targetId)
 
   return appendStructuredClaim<DefenseClaim>(state, {
@@ -556,7 +557,7 @@ export function recordDefenseClaim(
     targetId,
     quote: quote?.trim() || undefined,
     sourceMessageId,
-  })
+  }, sourceMessage?.round ?? state.round)
 }
 
 export function getActiveClaims(state: GameState): StructuredClaim[] {
