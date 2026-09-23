@@ -5,8 +5,10 @@ import {
   beginVoting,
   createGame,
   getActiveClaims,
+  getChatAccess,
   getPlayerTimeline,
   getPrivatePlayerView,
+  getVisibleChatMessages,
   getVoteHistory,
   groupRoleClaims,
   recordAccusationClaim,
@@ -14,6 +16,7 @@ import {
   recordDefenseClaim,
   recordInformationClaim,
   recordRoleClaim,
+  sendChatMessage,
   submitNightAction,
   submitVote,
   validNightTargets,
@@ -30,7 +33,7 @@ import {
   setDeductionMark,
 } from './game/deduction'
 import type { DeductionMark, PrivateDeductionState } from './game/deduction'
-import type { ActionClaim, ClaimKind, GameState, RoleId, StructuredClaim } from './game/types'
+import type { ActionClaim, ChatChannel, ClaimKind, GameState, RoleId, StructuredClaim } from './game/types'
 
 type Screen =
   | 'home'
@@ -225,6 +228,15 @@ export default function App() {
     setGame(withdrawClaim(game, claimId))
   }
 
+  const sendHumanChat = (channel: ChatChannel, text: string) => {
+    if (!game) return
+    try {
+      setGame(sendChatMessage(game, HUMAN_ID, channel, text))
+    } catch {
+      // Görünürlük ve yazma yetkisi motor tarafından tekrar doğrulanır.
+    }
+  }
+
   const launchGame = () => {
     const next = createGame(players.map(({ id, name }) => ({ id, name })))
     setGame(next)
@@ -320,7 +332,13 @@ export default function App() {
       {screen === 'lobby' && <Lobby onBack={() => setScreen('home')} onStart={launchGame} />}
       {screen === 'role' && game && <RoleReveal game={game} onContinue={toFirstNight} />}
       {screen === 'night' && game && (
-        <Night game={game} selected={selected} setSelected={setSelected} onResolve={finishNight} />
+        <Night
+          game={game}
+          selected={selected}
+          setSelected={setSelected}
+          onResolve={finishNight}
+          onSendChat={sendHumanChat}
+        />
       )}
       {screen === 'dawn' && game && <Dawn game={game} onContinue={toDiscussion} />}
       {screen === 'day' && game && (
@@ -342,6 +360,7 @@ export default function App() {
           onDeductionChange={updateDeductionMark}
           onAddPrivateNote={addPrivateNote}
           onRemovePrivateNote={removePrivateNote}
+          onSendChat={sendHumanChat}
         />
       )}
       {claimComposerOpen && game && (
@@ -424,7 +443,7 @@ function Lobby({ onBack, onStart }: { onBack: () => void; onStart: () => void })
               ))}
               <div className="empty">＋ <b>Boş Oyuncu</b><button>♟ Davet Et</button></div>
             </div>
-            <div className="chat"><b>Sohbet</b><p><strong>Mert:</strong> Herkese merhaba!</p><p><strong>Ayşe:</strong> Hazırım 🙂</p><p><strong>Burak:</strong> Bu sefer köylüler kazanacak.</p><input placeholder="Mesajını yaz..." /></div>
+            <div className="chat lobby-chat-placeholder"><b>Lobi Sohbeti</b><p>Gerçek zamanlı lobi mesajlaşması çok oyunculu ağ katmanıyla birlikte bağlanacak.</p><small>Oyun içi Köy, Vampir ve Hayalet sohbetleri aktif oyun motoruna bağlıdır.</small></div>
           </div>
           <div className="settings">
             <div className="tabs"><button className="active">Oyun Ayarları</button><button>Rol Dağılımı</button></div>
@@ -501,6 +520,7 @@ function Day({
   onDeductionChange,
   onAddPrivateNote,
   onRemovePrivateNote,
+  onSendChat,
 }: {
   game: GameState
   selected: number | null
@@ -519,7 +539,9 @@ function Day({
   onDeductionChange: (playerId: number, mark: DeductionMark) => void
   onAddPrivateNote: (playerId: number, round: number, text: string) => void
   onRemovePrivateNote: (playerId: number, noteId: number) => void
+  onSendChat: (channel: ChatChannel, text: string) => void
 }) {
+  const [panelMode, setPanelMode] = useState<'chat' | 'deduction'>('chat')
   const publicPlayers = getPrivatePlayerView(game, HUMAN_ID).publicPlayers
   const aliveById = new Map(publicPlayers.map((player) => [player.id, player.alive]))
 
@@ -569,7 +591,20 @@ function Day({
         <Lore />
         <button className="vote" onClick={onVote}>Oylamaya Geç <b>›</b></button>
       </section>
-      <aside className="panel deduction">
+      <aside className={'panel day-side-panel ' + (panelMode === 'deduction' ? 'deduction' : 'chat-side')}>
+        <nav className="panel-mode-switch" aria-label="Köy meclisi yan paneli">
+          <button className={panelMode === 'chat' ? 'active' : ''} onClick={() => setPanelMode('chat')}>
+            <span>✉</span><b>Sohbet</b>
+          </button>
+          <button className={panelMode === 'deduction' ? 'active' : ''} onClick={() => setPanelMode('deduction')}>
+            <span>⌘</span><b>Dedüksiyon</b>
+          </button>
+        </nav>
+
+        {panelMode === 'chat' ? (
+          <ChatPanel game={game} viewerId={HUMAN_ID} onSend={onSendChat} />
+        ) : (
+          <>
         <header className="deduction-head">
           <div>
             <small>ÖZEL DEDÜKSİYON DEFTERİ</small>
@@ -609,6 +644,8 @@ function Day({
             />
           )}
         </div>
+          </>
+        )}
       </aside>
       {selected && (
         <Inspector
@@ -625,6 +662,150 @@ function Day({
         />
       )}
     </main>
+  )
+}
+
+const chatChannelMeta: Record<ChatChannel, { label: string; icon: string; description: string }> = {
+  village: {
+    label: 'Köy',
+    icon: '⌂',
+    description: 'Yaşayan oyuncuların gündüz sohbeti',
+  },
+  vampire: {
+    label: 'Vampir',
+    icon: '🦇',
+    description: 'Yalnızca Vampirler görür',
+  },
+  ghost: {
+    label: 'Hayalet',
+    icon: '☠',
+    description: 'Yalnızca ölü oyuncular konuşur',
+  },
+}
+
+function ChatPanel({
+  game,
+  viewerId,
+  onSend,
+  compact = false,
+}: {
+  game: GameState
+  viewerId: number
+  onSend: (channel: ChatChannel, text: string) => void
+  compact?: boolean
+}) {
+  const access = getChatAccess(game, viewerId)
+  const initialChannel = access.writable[0] ?? access.readable[0] ?? 'village'
+  const [activeChannel, setActiveChannel] = useState<ChatChannel>(initialChannel)
+  const [draft, setDraft] = useState('')
+
+  const preferredChannel =
+    game.phase === 'night' && access.writable.length > 0
+      ? access.writable[0]
+      : activeChannel
+  const selectedChannel = access.readable.includes(preferredChannel)
+    ? preferredChannel
+    : access.readable[0] ?? 'village'
+  const messages = getVisibleChatMessages(game, viewerId).filter(
+    (message) => message.channel === selectedChannel,
+  )
+  const writable = access.writable.includes(selectedChannel)
+  const meta = chatChannelMeta[selectedChannel]
+
+  const send = () => {
+    const text = draft.trim()
+    if (!text || !writable) return
+    onSend(selectedChannel, text)
+    setDraft('')
+  }
+
+  return (
+    <section className={'chat-panel ' + (compact ? 'compact' : '')}>
+      <header className="chat-panel-head">
+        <div>
+          <small>{meta.icon} {meta.label.toLocaleUpperCase('tr-TR')} SOHBETİ</small>
+          <b>{meta.description}</b>
+        </div>
+        <span>{game.round}. {game.phase === 'night' ? 'Gece' : 'Gün'}</span>
+      </header>
+
+      {access.readable.length > 1 && (
+        <nav className="chat-channel-tabs" aria-label="Sohbet kanalları">
+          {access.readable.map((channel) => {
+            const channelMeta = chatChannelMeta[channel]
+            const canWrite = access.writable.includes(channel)
+            return (
+              <button
+                key={channel}
+                className={selectedChannel === channel ? 'active' : ''}
+                onClick={() => setActiveChannel(channel)}
+              >
+                <span>{channelMeta.icon}</span>
+                <b>{channelMeta.label}</b>
+                <em>{canWrite ? 'yaz' : 'oku'}</em>
+              </button>
+            )
+          })}
+        </nav>
+      )}
+
+      <div className={'chat-feed chat-feed-' + selectedChannel}>
+        {messages.length === 0 ? (
+          <div className="chat-empty">
+            <span>{meta.icon}</span>
+            <b>Henüz mesaj yok.</b>
+            <small>{writable ? 'İlk mesajı sen yazabilirsin.' : 'Bu kanal şu anda yalnızca okunabilir.'}</small>
+          </div>
+        ) : (
+          messages.map((message) => {
+            const author = players.find((player) => player.id === message.authorId)
+            const mine = message.authorId === viewerId
+            return (
+              <article className={mine ? 'mine' : ''} key={message.id}>
+                <span className="avatar" style={{ '--accent': author?.accent ?? '#685849' } as CSSProperties}>
+                  {author?.initial ?? '?'}
+                </span>
+                <div>
+                  <header>
+                    <b>{author?.name ?? 'Oyuncu'}</b>
+                    <small>{message.round}. {message.phase === 'night' ? 'Gece' : 'Gün'}</small>
+                  </header>
+                  <p>{message.text}</p>
+                </div>
+              </article>
+            )
+          })
+        )}
+      </div>
+
+      {writable ? (
+        <div className="chat-compose">
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                send()
+              }
+            }}
+            placeholder={selectedChannel === 'vampire' ? 'Vampir takımına yaz...' : selectedChannel === 'ghost' ? 'Hayaletlere yaz...' : 'Köye yaz...'}
+            maxLength={280}
+          />
+          <button disabled={!draft.trim()} onClick={send}>Gönder</button>
+        </div>
+      ) : (
+        <div className="chat-readonly">
+          <span>◌</span>
+          <p>{selectedChannel === 'vampire' ? 'Vampir sohbetine yalnızca gece yazılabilir.' : 'Bu kanala şu anda mesaj gönderemezsin.'}</p>
+        </div>
+      )}
+
+      <footer>
+        <span>Enter: gönder · Shift+Enter: satır atla</span>
+        <b>{selectedChannel === 'vampire' ? 'GİZLİ KANAL' : selectedChannel === 'ghost' ? 'ÖLÜLER KANALI' : 'KÖY MEYDANI'}</b>
+      </footer>
+    </section>
   )
 }
 
@@ -1239,11 +1420,13 @@ function Night({
   selected,
   setSelected,
   onResolve,
+  onSendChat,
 }: {
   game: GameState
   selected: number | null
   setSelected: (id: number | null) => void
   onResolve: () => void
+  onSendChat: (channel: ChatChannel, text: string) => void
 }) {
   const view = getPrivatePlayerView(game, HUMAN_ID)
   const visual = roleVisuals[view.selfRole]
@@ -1253,6 +1436,10 @@ function Night({
   const targetIds = new Set(targets.map((target) => target.id))
   const picked = targets.find((target) => target.id === selected)
   const canAct = !self?.alive || action === null || selected !== null
+  const nightChatAccess = getChatAccess(game, HUMAN_ID)
+  const nightChatAvailable = nightChatAccess.writable.some(
+    (channel) => channel === 'vampire' || channel === 'ghost',
+  )
 
   return (
     <main className="game night-game">
@@ -1297,6 +1484,11 @@ function Night({
         </section>
         <button className="seer-btn" disabled={!canAct} onClick={onResolve}>{visual.icon} {self?.alive ? visual.action : 'Hayalet Olarak İzle'}</button>
         <small className="hint">Gerçek roller diğer oyunculara açıklanmaz.</small>
+        {nightChatAvailable && (
+          <div className="night-chat">
+            <ChatPanel game={game} viewerId={HUMAN_ID} onSend={onSendChat} compact />
+          </div>
+        )}
       </aside>
     </main>
   )
