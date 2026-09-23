@@ -103,3 +103,15 @@
   .mobile-game-dock{left:6px;right:6px}
   .night-mobile-confirm{left:6px;right:6px}
 }
+
+/* P2.12 — mobile ghost and keyboard polish */
+@media(max-width:900px){
+  .ghost-transition-main>.brand{display:none}
+  .ghost-transition-main{padding-top:34px}
+  .phase-night .game:has(.chat-compose textarea:focus) .night-mobile-confirm{opacity:0;pointer-events:none;transform:translateY(90px)}
+  .night-mobile-confirm{transition:opacity .16s ease,transform .18s ease}
+}
+@media(max-width:520px){
+  .ghost-transition-main{padding-top:24px}
+  .ghost-transition{padding-top:58px}
+}
