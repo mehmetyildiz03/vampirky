@@ -36,3 +36,11 @@ describe('private deduction state', () => {
     expect('marks' in game).toBe(false)
   })
 })
+
+
+it('keeps the owner unmarked', () => {
+  const state = createPrivateDeductionState(1, [1, 2, 3])
+  const next = setDeductionMark(state, 1, 'trusted')
+
+  expect(getDeductionMark(next, 1)).toBe('uncertain')
+})

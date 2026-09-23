@@ -29,6 +29,8 @@ export function setDeductionMark(
   playerId: number,
   mark: DeductionMark,
 ): PrivateDeductionState {
+  if (playerId === state.ownerId) return state
+
   return {
     ...state,
     marks: {

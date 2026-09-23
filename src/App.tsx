@@ -561,6 +561,7 @@ function Day({
           player={players.find((player) => player.id === selected)!}
           alive={aliveById.get(selected) ?? true}
           deductionMark={getDeductionMark(deduction, selected)}
+          isSelf={selected === HUMAN_ID}
           onDeductionChange={(mark) => onDeductionChange(selected, mark)}
           close={() => setSelected(null)}
         />
@@ -899,6 +900,7 @@ function Inspector({
   player,
   alive,
   deductionMark,
+  isSelf,
   onDeductionChange,
   close,
 }: {
@@ -906,6 +908,7 @@ function Inspector({
   player: Player
   alive: boolean
   deductionMark: DeductionMark
+  isSelf: boolean
   onDeductionChange: (mark: DeductionMark) => void
   close: () => void
 }) {
@@ -946,13 +949,14 @@ function Inspector({
       <div className="private-deduction-head">
         <div>
           <b>Özel Değerlendirmen</b>
-          <small>Yalnızca sana görünür · oyun gerçeği değildir</small>
+          <small>{isSelf ? 'Kendi oyuncun için değerlendirme yapılmaz' : 'Yalnızca sana görünür · oyun gerçeği değildir'}</small>
         </div>
       </div>
       <div className="inspector-trust" role="group" aria-label="Özel oyuncu değerlendirmesi">
         <button
           className={'bad ' + (deductionMark === 'suspicious' ? 'active' : '')}
           aria-pressed={deductionMark === 'suspicious'}
+          disabled={isSelf}
           onClick={() => onDeductionChange('suspicious')}
         >
           ✕ Şüpheli
@@ -960,6 +964,7 @@ function Inspector({
         <button
           className={deductionMark === 'uncertain' ? 'active neutral' : ''}
           aria-pressed={deductionMark === 'uncertain'}
+          disabled={isSelf}
           onClick={() => onDeductionChange('uncertain')}
         >
           ? Kararsızım
@@ -967,6 +972,7 @@ function Inspector({
         <button
           className={'good ' + (deductionMark === 'trusted' ? 'active' : '')}
           aria-pressed={deductionMark === 'trusted'}
+          disabled={isSelf}
           onClick={() => onDeductionChange('trusted')}
         >
           ✓ Güveniyorum
