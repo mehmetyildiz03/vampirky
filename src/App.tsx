@@ -648,6 +648,7 @@ function Day({
   onMarkChatRead: (channel: ChatChannel, messageId: number) => void
 }) {
   const [panelMode, setPanelMode] = useState<'chat' | 'deduction'>('chat')
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
   const [chatChannel, setChatChannel] = useState<ChatChannel>(() =>
     getChatAccess(game, HUMAN_ID).writable.includes('ghost') ? 'ghost' : 'village',
   )
@@ -688,6 +689,7 @@ function Day({
     if (!source || source.channel !== 'village') return
     setSelected(null)
     setPanelMode('chat')
+    setMobilePanelOpen(true)
     setChatChannel('village')
     setChatFocusMessageId(messageId)
   }
@@ -709,7 +711,10 @@ function Day({
                 key={player.id}
                 className={'seat ' + (selected === player.id ? 'selected ' : '') + (!alive ? 'dead-seat' : '')}
                 style={{ left: x + '%', top: y + '%' }}
-                onClick={() => setSelected(selected === player.id ? null : player.id)}
+                onClick={() => {
+                  setMobilePanelOpen(false)
+                  setSelected(selected === player.id ? null : player.id)
+                }}
               >
                 <i>{index + 1}</i>
                 <span className="avatar player-avatar" style={{ '--accent': player.accent } as CSSProperties}>{player.initial}</span>
@@ -729,14 +734,50 @@ function Day({
         </div>
         <Lore />
         <button className="vote" onClick={onVote}>Oylamaya Geç <b>›</b></button>
+        <nav className="mobile-game-dock" aria-label="Köy meclisi araçları">
+          <button
+            className={panelMode === 'chat' && mobilePanelOpen ? 'active' : ''}
+            onClick={() => {
+              setSelected(null)
+              setPanelMode('chat')
+              setMobilePanelOpen(true)
+            }}
+          >
+            <span>✉</span>
+            <b>Sohbet</b>
+            {totalUnread > 0 && <em>{totalUnread}</em>}
+          </button>
+          <button
+            className={panelMode === 'deduction' && mobilePanelOpen ? 'active' : ''}
+            onClick={() => {
+              setSelected(null)
+              setPanelMode('deduction')
+              setMobilePanelOpen(true)
+            }}
+          >
+            <span>⌘</span>
+            <b>Dedüksiyon</b>
+            <em>{activeClaimCount + privateNoteCount}</em>
+          </button>
+        </nav>
       </section>
-      <aside className={'panel day-side-panel ' + (panelMode === 'deduction' ? 'deduction' : 'chat-side')}>
+      <div
+        className={'mobile-sheet-backdrop ' + (mobilePanelOpen ? 'open' : '')}
+        onClick={() => setMobilePanelOpen(false)}
+        aria-hidden
+      />
+      <aside className={'panel day-side-panel ' + (panelMode === 'deduction' ? 'deduction ' : 'chat-side ') + (mobilePanelOpen ? 'mobile-open' : '')}>
+        <div className="mobile-sheet-head">
+          <span className="mobile-sheet-grabber" />
+          <b>{panelMode === 'chat' ? 'Sohbet' : 'Dedüksiyon'}</b>
+          <button aria-label="Paneli kapat" onClick={() => setMobilePanelOpen(false)}>×</button>
+        </div>
         <nav className="panel-mode-switch" aria-label="Köy meclisi yan paneli">
-          <button className={panelMode === 'chat' ? 'active' : ''} onClick={() => setPanelMode('chat')}>
+          <button className={panelMode === 'chat' ? 'active' : ''} onClick={() => { setPanelMode('chat'); setMobilePanelOpen(true) }}>
             <span>✉</span><b>Sohbet</b>
             {totalUnread > 0 && <em className="mode-unread">{totalUnread}</em>}
           </button>
-          <button className={panelMode === 'deduction' ? 'active' : ''} onClick={() => setPanelMode('deduction')}>
+          <button className={panelMode === 'deduction' ? 'active' : ''} onClick={() => { setPanelMode('deduction'); setMobilePanelOpen(true) }}>
             <span>⌘</span><b>Dedüksiyon</b>
           </button>
         </nav>
