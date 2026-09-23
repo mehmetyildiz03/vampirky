@@ -368,7 +368,6 @@ export default function App() {
           setSelected={setSelected}
           onResolve={finishNight}
           onSendChat={sendHumanChat}
-          onClaimFromMessage={openClaimFromMessage}
         />
       )}
       {screen === 'dawn' && game && <Dawn game={game} onContinue={toDiscussion} />}
@@ -392,6 +391,7 @@ export default function App() {
           onAddPrivateNote={addPrivateNote}
           onRemovePrivateNote={removePrivateNote}
           onSendChat={sendHumanChat}
+          onClaimFromMessage={openClaimFromMessage}
         />
       )}
       {claimComposerOpen && game && (
