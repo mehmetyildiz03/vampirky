@@ -450,3 +450,30 @@ describe('chat sourced claims', () => {
     })
   })
 })
+
+
+describe('ghost mode access transition', () => {
+  it('removes vampire chat access immediately when a vampire dies', () => {
+    let game = beginNight(createGame(seeds(9)))
+    game = resolveNight(game)
+    game = beginDiscussion(game)
+    game = beginVoting(game)
+
+    const vampire = game.players.find((player) => player.secretRole === 'vampire')!
+    const voters = game.players.filter(
+      (player) => player.alive && player.id !== vampire.id,
+    )
+
+    for (const voter of voters) {
+      game = submitVote(game, voter.id, vampire.id)
+    }
+    game = resolveVote(game)
+
+    const access = getChatAccess(game, vampire.id)
+
+    expect(game.players.find((player) => player.id === vampire.id)?.alive).toBe(false)
+    expect(access.readable).toEqual(['village', 'ghost'])
+    expect(access.writable).toEqual(['ghost'])
+    expect(access.readable).not.toContain('vampire')
+  })
+})

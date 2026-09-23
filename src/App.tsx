@@ -41,6 +41,7 @@ type Screen =
   | 'role'
   | 'night'
   | 'dawn'
+  | 'ghost'
   | 'day'
   | 'vote'
   | 'vote-result'
@@ -156,6 +157,7 @@ export default function App() {
   const [claimSuspectedRole, setClaimSuspectedRole] = useState<RoleId | ''>('vampire')
   const [claimQuote, setClaimQuote] = useState('')
   const [claimSourceMessageId, setClaimSourceMessageId] = useState<number | null>(null)
+  const [ghostReturnScreen, setGhostReturnScreen] = useState<'dawn' | 'vote-result'>('dawn')
 
   const addNote = () => {
     const text = note.trim()
@@ -274,6 +276,7 @@ export default function App() {
       createPrivateDeductionState(HUMAN_ID, players.map((player) => player.id)),
     )
     setSelected(null)
+    setGhostReturnScreen('dawn')
     setScreen('role')
   }
 
@@ -313,9 +316,20 @@ export default function App() {
     }
 
     next = completeNightWithBots(next, HUMAN_ID)
+    const wasAlive = Boolean(self?.alive)
+    const isAlive = Boolean(next.players.find((player) => player.id === HUMAN_ID)?.alive)
+
     setGame(next)
     setSelected(null)
-    setScreen(next.winner ? 'end' : 'dawn')
+
+    if (next.winner) {
+      setScreen('end')
+    } else if (wasAlive && !isAlive) {
+      setGhostReturnScreen('dawn')
+      setScreen('ghost')
+    } else {
+      setScreen('dawn')
+    }
   }
 
   const toDiscussion = () => {
@@ -343,9 +357,20 @@ export default function App() {
     }
 
     next = completeVoteWithBots(next, HUMAN_ID)
+    const wasAlive = Boolean(self?.alive)
+    const isAlive = Boolean(next.players.find((player) => player.id === HUMAN_ID)?.alive)
+
     setGame(next)
     setSelected(null)
-    setScreen(next.winner ? 'end' : 'vote-result')
+
+    if (next.winner) {
+      setScreen('end')
+    } else if (wasAlive && !isAlive) {
+      setGhostReturnScreen('vote-result')
+      setScreen('ghost')
+    } else {
+      setScreen('vote-result')
+    }
   }
 
   const toNextNight = () => {
@@ -371,6 +396,14 @@ export default function App() {
         />
       )}
       {screen === 'dawn' && game && <Dawn game={game} onContinue={toDiscussion} />}
+      {screen === 'ghost' && game && (
+        <GhostTransition
+          game={game}
+          cause={ghostReturnScreen === 'dawn' ? 'night' : 'vote'}
+          onSendChat={sendHumanChat}
+          onContinue={() => setScreen(ghostReturnScreen)}
+        />
+      )}
       {screen === 'day' && game && (
         <Day
           game={game}
@@ -576,7 +609,9 @@ function Day({
   onClaimFromMessage: (messageId: number) => void
 }) {
   const [panelMode, setPanelMode] = useState<'chat' | 'deduction'>('chat')
-  const [chatChannel, setChatChannel] = useState<ChatChannel>('village')
+  const [chatChannel, setChatChannel] = useState<ChatChannel>(() =>
+    getChatAccess(game, HUMAN_ID).writable.includes('ghost') ? 'ghost' : 'village',
+  )
   const [chatLastRead, setChatLastRead] = useState<Record<ChatChannel, number>>({
     village: 0,
     vampire: 0,
@@ -1728,6 +1763,69 @@ function Night({
             <ChatPanel game={game} viewerId={HUMAN_ID} onSend={onSendChat} compact />
           </div>
         )}
+      </aside>
+    </main>
+  )
+}
+
+function GhostTransition({
+  game,
+  cause,
+  onSendChat,
+  onContinue,
+}: {
+  game: GameState
+  cause: 'night' | 'vote'
+  onSendChat: (channel: ChatChannel, text: string) => void
+  onContinue: () => void
+}) {
+  const self = game.players.find((player) => player.id === HUMAN_ID)
+  const portrait = players.find((player) => player.id === HUMAN_ID)!
+  const access = getChatAccess(game, HUMAN_ID)
+
+  return (
+    <main className="ghost-transition">
+      <section className="ghost-transition-main">
+        <Brand />
+        <div className="ghost-orb" aria-hidden>☠</div>
+        <small className="ghost-kicker">HAYALET MODU</small>
+        <h1>Artık Hayaletsin.</h1>
+        <div className="ghost-self">
+          <span className="avatar big" style={{ '--accent': portrait.accent } as CSSProperties}>
+            {portrait.initial}
+          </span>
+          <div>
+            <b>{self?.name ?? portrait.name}</b>
+            <small>{cause === 'night' ? 'Gece öldürüldün.' : 'Köy oylamasıyla elendin.'}</small>
+          </div>
+        </div>
+        <p>
+          Oyunu izlemeye devam edebilirsin. Yaşayanların kararlarını etkileyemezsin;
+          Hayalet sohbetinde diğer ölü oyuncularla konuşabilirsin.
+        </p>
+        <div className="ghost-rules">
+          <div><span>⌂</span><b>Köy Sohbeti</b><small>Okuyabilirsin · yazamazsın</small></div>
+          <div><span>☠</span><b>Hayalet Sohbeti</b><small>Okuyabilir ve yazabilirsin</small></div>
+          <div><span>🦇</span><b>Vampir Sohbeti</b><small>Artık erişilemez</small></div>
+        </div>
+        <button className="start ghost-continue" onClick={onContinue}>
+          {cause === 'night' ? 'Sabahı İzle' : 'Oylama Sonucunu İzle'} <b>›</b>
+        </button>
+      </section>
+
+      <aside className="panel ghost-chat-panel">
+        <header>
+          <small>ÖLÜLER KANALI</small>
+          <b>Hayalet Sohbeti</b>
+          <em>{access.writable.includes('ghost') ? '● Aktif' : '○ Salt okunur'}</em>
+        </header>
+        <ChatPanel
+          game={game}
+          viewerId={HUMAN_ID}
+          onSend={onSendChat}
+          activeChannel="ghost"
+          compact
+        />
       </aside>
     </main>
   )
