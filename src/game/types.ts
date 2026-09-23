@@ -106,6 +106,26 @@ export interface VoteResolution {
   tied: boolean
 }
 
+export interface VoteRecord {
+  round: number
+  voterId: number
+  targetId: number
+}
+
+export type PlayerTimelineEntry =
+  | {
+      key: string
+      round: number
+      kind: 'claim'
+      claim: StructuredClaim
+    }
+  | {
+      key: string
+      round: number
+      kind: 'vote'
+      vote: VoteRecord
+    }
+
 export interface GameEvent {
   id: number
   round: number
@@ -121,6 +141,7 @@ export interface GameState {
   claims: StructuredClaim[]
   nightActions: NightAction[]
   dayVotes: Record<number, number>
+  voteHistory: VoteRecord[]
   privateIntel: Record<number, SeerIntel[]>
   lastNight: NightResolution | null
   lastVote: VoteResolution | null

@@ -8,6 +8,7 @@ import type {
   NightActionType,
   NightResolution,
   PlayerSeed,
+  PlayerTimelineEntry,
   PrivatePlayerView,
   PublicPlayer,
   ActionClaim,
@@ -18,6 +19,7 @@ import type {
   RoleClaimGroup,
   RoleId,
   StructuredClaim,
+  VoteRecord,
   VoteResolution,
   Winner,
 } from './types'
@@ -29,6 +31,7 @@ function cloneState(state: GameState): GameState {
     claims: state.claims.map((claim) => ({ ...claim })),
     nightActions: state.nightActions.map((action) => ({ ...action })),
     dayVotes: { ...state.dayVotes },
+    voteHistory: state.voteHistory.map((vote) => ({ ...vote })),
     privateIntel: Object.fromEntries(
       Object.entries(state.privateIntel).map(([key, value]) => [
         Number(key),
@@ -107,6 +110,7 @@ export function createGame(players: readonly PlayerSeed[]): GameState {
     claims: [],
     nightActions: [],
     dayVotes: {},
+    voteHistory: [],
     privateIntel: Object.fromEntries(players.map((player) => [player.id, []])),
     lastNight: null,
     lastVote: null,
@@ -300,6 +304,14 @@ export function resolveVote(state: GameState): GameState {
     tied,
   }
 
+  const completedVotes: VoteRecord[] = Object.entries(next.dayVotes).map(
+    ([voterId, targetId]) => ({
+      round: next.round,
+      voterId: Number(voterId),
+      targetId,
+    }),
+  )
+  next.voteHistory.push(...completedVotes)
   next.lastVote = resolution
   next.phase = 'resolution'
   next = appendEvent(
@@ -440,6 +452,46 @@ export function getActiveClaims(state: GameState): StructuredClaim[] {
   return state.claims
     .filter((claim) => claim.status === 'active')
     .map((claim) => ({ ...claim }))
+}
+
+export function getVoteHistory(state: GameState): VoteRecord[] {
+  return state.voteHistory.map((vote) => ({ ...vote }))
+}
+
+export function getPlayerTimeline(
+  state: GameState,
+  playerId: number,
+): PlayerTimelineEntry[] {
+  findPlayer(state, playerId)
+
+  const claimEntries: PlayerTimelineEntry[] = state.claims
+    .filter((claim) => claim.claimantId === playerId)
+    .map((claim) => ({
+      key: `claim-${claim.id}`,
+      round: claim.round,
+      kind: 'claim',
+      claim: { ...claim },
+    }))
+
+  const voteEntries: PlayerTimelineEntry[] = state.voteHistory
+    .filter((vote) => vote.voterId === playerId)
+    .map((vote, index) => ({
+      key: `vote-${vote.round}-${vote.voterId}-${index}`,
+      round: vote.round,
+      kind: 'vote',
+      vote: { ...vote },
+    }))
+
+  return [...claimEntries, ...voteEntries].sort((a, b) => {
+    if (a.round !== b.round) return a.round - b.round
+    if (a.kind === b.kind) {
+      if (a.kind === 'claim' && b.kind === 'claim') {
+        return a.claim.id - b.claim.id
+      }
+      return 0
+    }
+    return a.kind === 'claim' ? -1 : 1
+  })
 }
 
 export function groupRoleClaims(state: GameState): RoleClaimGroup[] {

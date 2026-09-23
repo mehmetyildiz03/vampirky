@@ -7,7 +7,9 @@ import {
   groupRoleClaims,
   withdrawClaim,
   getActiveClaims,
+  getPlayerTimeline,
   getPrivatePlayerView,
+  getVoteHistory,
   recordAccusationClaim,
   recordActionClaim,
   recordDefenseClaim,
@@ -225,5 +227,66 @@ describe('structured social claims', () => {
     expect(() =>
       recordDefenseClaim(game, target.id, vampires[0].id, 'Ona güveniyorum.'),
     ).toThrow('Dead players cannot create new claims.')
+  })
+})
+
+
+describe('public player history', () => {
+  it('persists completed votes across rounds', () => {
+    let game = beginNight(createGame(seeds(9)))
+    game = resolveNight(game)
+    game = beginDiscussion(game)
+    game = beginVoting(game)
+
+    const voter = game.players.find((player) => player.alive)!
+    const target = game.players.find(
+      (player) => player.alive && player.id !== voter.id,
+    )!
+    game = submitVote(game, voter.id, target.id)
+    game = resolveVote(game)
+
+    expect(getVoteHistory(game)).toContainEqual({
+      round: 1,
+      voterId: voter.id,
+      targetId: target.id,
+    })
+  })
+
+  it('builds one player timeline from claims and final votes', () => {
+    let game = createGame(seeds(9))
+    game = recordRoleClaim(game, 1, 'seer', 'Ben Kâhinim.')
+    game = recordDefenseClaim(game, 1, 2, 'Ayşe’ye güveniyorum.')
+    game = withdrawClaim(game, game.claims[0].id)
+
+    game = beginNight(game)
+    game = resolveNight(game)
+    game = beginDiscussion(game)
+    game = beginVoting(game)
+
+    const target = game.players.find(
+      (player) => player.alive && player.id !== 1,
+    )!
+    game = submitVote(game, 1, target.id)
+    game = resolveVote(game)
+
+    const timeline = getPlayerTimeline(game, 1)
+
+    expect(timeline.map((entry) => entry.kind)).toEqual([
+      'claim',
+      'claim',
+      'vote',
+    ])
+    expect(
+      timeline.find(
+        (entry) => entry.kind === 'claim' && entry.claim.kind === 'role',
+      ),
+    ).toMatchObject({
+      kind: 'claim',
+      claim: { status: 'withdrawn' },
+    })
+    expect(timeline.at(-1)).toMatchObject({
+      kind: 'vote',
+      vote: { targetId: target.id },
+    })
   })
 })
