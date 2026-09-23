@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import {
   beginDiscussion,
   beginNight,
@@ -576,6 +576,13 @@ function Day({
   onClaimFromMessage: (messageId: number) => void
 }) {
   const [panelMode, setPanelMode] = useState<'chat' | 'deduction'>('chat')
+  const [chatChannel, setChatChannel] = useState<ChatChannel>('village')
+  const [chatLastRead, setChatLastRead] = useState<Record<ChatChannel, number>>({
+    village: 0,
+    vampire: 0,
+    ghost: 0,
+  })
+  const [chatFocusMessageId, setChatFocusMessageId] = useState<number | null>(null)
   const publicPlayers = getPrivatePlayerView(game, HUMAN_ID).publicPlayers
   const aliveById = new Map(publicPlayers.map((player) => [player.id, player.alive]))
 
@@ -586,6 +593,42 @@ function Day({
     0,
   )
   const privateNoteCount = notes.length + playerPrivateNoteCount
+
+  const visibleChatMessages = getVisibleChatMessages(game, HUMAN_ID)
+  const unreadByChannel: Record<ChatChannel, number> = {
+    village: 0,
+    vampire: 0,
+    ghost: 0,
+  }
+  for (const message of visibleChatMessages) {
+    if (
+      message.authorId !== HUMAN_ID &&
+      message.id > chatLastRead[message.channel]
+    ) {
+      unreadByChannel[message.channel] += 1
+    }
+  }
+  const totalUnread = Object.values(unreadByChannel).reduce(
+    (total, count) => total + count,
+    0,
+  )
+
+  const markChatRead = (channel: ChatChannel, messageId: number) => {
+    setChatLastRead((current) =>
+      messageId <= current[channel]
+        ? current
+        : { ...current, [channel]: messageId },
+    )
+  }
+
+  const openSourceMessage = (messageId: number) => {
+    const source = game.chatMessages.find((message) => message.id === messageId)
+    if (!source || source.channel !== 'village') return
+    setSelected(null)
+    setPanelMode('chat')
+    setChatChannel('village')
+    setChatFocusMessageId(messageId)
+  }
 
   return (
     <main className="game">
@@ -629,6 +672,7 @@ function Day({
         <nav className="panel-mode-switch" aria-label="Köy meclisi yan paneli">
           <button className={panelMode === 'chat' ? 'active' : ''} onClick={() => setPanelMode('chat')}>
             <span>✉</span><b>Sohbet</b>
+            {totalUnread > 0 && <em className="mode-unread">{totalUnread}</em>}
           </button>
           <button className={panelMode === 'deduction' ? 'active' : ''} onClick={() => setPanelMode('deduction')}>
             <span>⌘</span><b>Dedüksiyon</b>
@@ -641,6 +685,12 @@ function Day({
             viewerId={HUMAN_ID}
             onSend={onSendChat}
             onClaimFromMessage={onClaimFromMessage}
+            activeChannel={chatChannel}
+            onActiveChannelChange={setChatChannel}
+            unreadByChannel={unreadByChannel}
+            onMarkRead={markChatRead}
+            focusMessageId={chatFocusMessageId}
+            onFocusHandled={() => setChatFocusMessageId(null)}
           />
         ) : (
           <>
@@ -669,6 +719,7 @@ function Day({
               game={game}
               onOpenComposer={onOpenClaimComposer}
               onWithdrawClaim={onWithdrawClaim}
+              onOpenSourceMessage={openSourceMessage}
             />
           )}
           {tab === 'votes' && <Votes game={game} />}
@@ -697,6 +748,7 @@ function Day({
           onDeductionChange={(mark) => onDeductionChange(selected, mark)}
           onAddPrivateNote={(text) => onAddPrivateNote(selected, game.round, text)}
           onRemovePrivateNote={(noteId) => onRemovePrivateNote(selected, noteId)}
+          onOpenSourceMessage={openSourceMessage}
           close={() => setSelected(null)}
         />
       )}
@@ -727,18 +779,39 @@ function ChatPanel({
   viewerId,
   onSend,
   onClaimFromMessage,
+  activeChannel: controlledChannel,
+  onActiveChannelChange,
+  unreadByChannel = { village: 0, vampire: 0, ghost: 0 },
+  onMarkRead,
+  focusMessageId = null,
+  onFocusHandled,
   compact = false,
 }: {
   game: GameState
   viewerId: number
   onSend: (channel: ChatChannel, text: string) => void
   onClaimFromMessage?: (messageId: number) => void
+  activeChannel?: ChatChannel
+  onActiveChannelChange?: (channel: ChatChannel) => void
+  unreadByChannel?: Record<ChatChannel, number>
+  onMarkRead?: (channel: ChatChannel, messageId: number) => void
+  focusMessageId?: number | null
+  onFocusHandled?: () => void
   compact?: boolean
 }) {
   const access = getChatAccess(game, viewerId)
   const initialChannel = access.writable[0] ?? access.readable[0] ?? 'village'
-  const [activeChannel, setActiveChannel] = useState<ChatChannel>(initialChannel)
+  const [internalChannel, setInternalChannel] = useState<ChatChannel>(initialChannel)
   const [draft, setDraft] = useState('')
+  const [highlightedMessageId, setHighlightedMessageId] = useState<number | null>(null)
+  const feedRef = useRef<HTMLDivElement | null>(null)
+  const stickToBottomRef = useRef(true)
+  const activeChannel = controlledChannel ?? internalChannel
+  const setActiveChannel = (channel: ChatChannel) => {
+    stickToBottomRef.current = true
+    if (onActiveChannelChange) onActiveChannelChange(channel)
+    else setInternalChannel(channel)
+  }
 
   const preferredChannel =
     game.phase === 'night' && access.writable.length > 0
@@ -752,6 +825,40 @@ function ChatPanel({
   )
   const writable = access.writable.includes(selectedChannel)
   const meta = chatChannelMeta[selectedChannel]
+  const lastMessageId = messages.at(-1)?.id ?? 0
+
+  useEffect(() => {
+    if (!feedRef.current || focusMessageId !== null) return
+    if (stickToBottomRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight
+      if (lastMessageId > 0) onMarkRead?.(selectedChannel, lastMessageId)
+    }
+  }, [lastMessageId, selectedChannel, focusMessageId, onMarkRead])
+
+  useEffect(() => {
+    if (focusMessageId === null || !feedRef.current) return
+    const target = feedRef.current.querySelector<HTMLElement>(
+      `[data-message-id="${focusMessageId}"]`,
+    )
+    if (!target) return
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    setHighlightedMessageId(focusMessageId)
+    onMarkRead?.(selectedChannel, focusMessageId)
+    onFocusHandled?.()
+    const timeout = window.setTimeout(() => setHighlightedMessageId(null), 1800)
+    return () => window.clearTimeout(timeout)
+  }, [focusMessageId, selectedChannel, onFocusHandled, onMarkRead])
+
+  const handleFeedScroll = () => {
+    const feed = feedRef.current
+    if (!feed) return
+    const distanceFromBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight
+    const nearBottom = distanceFromBottom < 72
+    stickToBottomRef.current = nearBottom
+    if (nearBottom && lastMessageId > 0) {
+      onMarkRead?.(selectedChannel, lastMessageId)
+    }
+  }
 
   const send = () => {
     const text = draft.trim()
@@ -783,14 +890,20 @@ function ChatPanel({
               >
                 <span>{channelMeta.icon}</span>
                 <b>{channelMeta.label}</b>
-                <em>{canWrite ? 'yaz' : 'oku'}</em>
+                {unreadByChannel[channel] > 0
+                  ? <em className="channel-unread">{unreadByChannel[channel]}</em>
+                  : <em>{canWrite ? 'yaz' : 'oku'}</em>}
               </button>
             )
           })}
         </nav>
       )}
 
-      <div className={'chat-feed chat-feed-' + selectedChannel}>
+      <div
+        ref={feedRef}
+        className={'chat-feed chat-feed-' + selectedChannel}
+        onScroll={handleFeedScroll}
+      >
         {messages.length === 0 ? (
           <div className="chat-empty">
             <span>{meta.icon}</span>
@@ -798,30 +911,51 @@ function ChatPanel({
             <small>{writable ? 'İlk mesajı sen yazabilirsin.' : 'Bu kanal şu anda yalnızca okunabilir.'}</small>
           </div>
         ) : (
-          messages.map((message) => {
+          messages.map((message, index) => {
             const author = players.find((player) => player.id === message.authorId)
             const mine = message.authorId === viewerId
+            const previous = messages[index - 1]
+            const phaseKey = `${message.round}-${message.phase}`
+            const previousPhaseKey = previous
+              ? `${previous.round}-${previous.phase}`
+              : null
+            const showPhaseDivider = phaseKey !== previousPhaseKey
             return (
-              <article className={mine ? 'mine' : ''} key={message.id}>
-                <span className="avatar" style={{ '--accent': author?.accent ?? '#685849' } as CSSProperties}>
-                  {author?.initial ?? '?'}
-                </span>
-                <div>
-                  <header>
-                    <b>{author?.name ?? 'Oyuncu'}</b>
-                    <small>{message.round}. {message.phase === 'night' ? 'Gece' : 'Gün'}</small>
-                  </header>
-                  <p>{message.text}</p>
-                  {selectedChannel === 'village' && onClaimFromMessage && (
-                    <button
-                      className="chat-to-claim"
-                      onClick={() => onClaimFromMessage(message.id)}
-                    >
-                      ◇ İddia olarak kaydet
-                    </button>
-                  )}
-                </div>
-              </article>
+              <div className="chat-message-block" key={message.id}>
+                {showPhaseDivider && (
+                  <div className="chat-phase-divider">
+                    <span />
+                    <b>{message.round}. {message.phase === 'night' ? 'Gece' : 'Gün'}</b>
+                    <span />
+                  </div>
+                )}
+                <article
+                  data-message-id={message.id}
+                  className={[
+                    mine ? 'mine' : '',
+                    highlightedMessageId === message.id ? 'source-highlight' : '',
+                  ].filter(Boolean).join(' ')}
+                >
+                  <span className="avatar" style={{ '--accent': author?.accent ?? '#685849' } as CSSProperties}>
+                    {author?.initial ?? '?'}
+                  </span>
+                  <div>
+                    <header>
+                      <b>{author?.name ?? 'Oyuncu'}</b>
+                      <small>{message.round}. {message.phase === 'night' ? 'Gece' : 'Gün'}</small>
+                    </header>
+                    <p>{message.text}</p>
+                    {selectedChannel === 'village' && onClaimFromMessage && (
+                      <button
+                        className="chat-to-claim"
+                        onClick={() => onClaimFromMessage(message.id)}
+                      >
+                        ◇ İddia olarak kaydet
+                      </button>
+                    )}
+                  </div>
+                </article>
+              </div>
             )
           })
         )}
@@ -889,10 +1023,12 @@ function Claims({
   game,
   onOpenComposer,
   onWithdrawClaim,
+  onOpenSourceMessage,
 }: {
   game: GameState
   onOpenComposer: () => void
   onWithdrawClaim: (claimId: number) => void
+  onOpenSourceMessage: (messageId: number) => void
 }) {
   const groups = groupRoleClaims(game)
   const socialClaims = getActiveClaims(game)
@@ -943,7 +1079,14 @@ function Claims({
                         <div>
                           <b>{claimant?.name ?? 'Oyuncu'}</b>
                           <small>{claim.round}. Gün · Rol iddiası</small>
-                          {claim.sourceMessageId && <em className="claim-source-badge">⌁ Köy sohbetinden</em>}
+                          {claim.sourceMessageId && (
+                            <button
+                              className="claim-source-badge"
+                              onClick={() => onOpenSourceMessage(claim.sourceMessageId!)}
+                            >
+                              ⌁ Mesaja git
+                            </button>
+                          )}
                           {claim.quote && <p>“{claim.quote}”</p>}
                         </div>
                         <button title="İddiayı geri çek" onClick={() => onWithdrawClaim(claim.id)}>↶</button>
@@ -983,7 +1126,14 @@ function Claims({
                     <b>{claimant?.name ?? 'Oyuncu'}</b>
                     <small>{claim.round}. Gün · {meta.label}</small>
                   </div>
-                  {claim.sourceMessageId && <em className="claim-source-badge">⌁ Köy sohbetinden</em>}
+                  {claim.sourceMessageId && (
+                    <button
+                      className="claim-source-badge"
+                      onClick={() => onOpenSourceMessage(claim.sourceMessageId!)}
+                    >
+                      ⌁ Mesaja git
+                    </button>
+                  )}
                   {target && (
                     <div className="social-claim-target">
                       <span>→</span>
@@ -1312,6 +1462,7 @@ function Inspector({
   onDeductionChange,
   onAddPrivateNote,
   onRemovePrivateNote,
+  onOpenSourceMessage,
   close,
 }: {
   game: GameState
@@ -1323,6 +1474,7 @@ function Inspector({
   onDeductionChange: (mark: DeductionMark) => void
   onAddPrivateNote: (text: string) => void
   onRemovePrivateNote: (noteId: number) => void
+  onOpenSourceMessage: (messageId: number) => void
   close: () => void
 }) {
   const [privateNoteDraft, setPrivateNoteDraft] = useState('')
@@ -1479,7 +1631,14 @@ function Inspector({
                     {entry.claim.status === 'withdrawn' && <em> · geri çekildi</em>}
                   </small>
                   <b>{described.title}</b>
-                  {entry.claim.sourceMessageId && <em className="timeline-source">⌁ Köy sohbetinden kaydedildi</em>}
+                  {entry.claim.sourceMessageId && (
+                    <button
+                      className="timeline-source"
+                      onClick={() => onOpenSourceMessage(entry.claim.sourceMessageId!)}
+                    >
+                      ⌁ Kaynak mesaja git
+                    </button>
+                  )}
                   {described.target && (
                     <p><span>→ {described.target.name}</span>{described.detail && <> · {described.detail}</>}</p>
                   )}
