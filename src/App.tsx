@@ -5,9 +5,12 @@ import {
   beginVoting,
   createGame,
   getPrivatePlayerView,
+  groupRoleClaims,
+  recordRoleClaim,
   submitNightAction,
   submitVote,
   validNightTargets,
+  withdrawClaim,
 } from './game/engine'
 import { completeNightWithBots, completeVoteWithBots } from './game/demo'
 import { ROLE_DEFINITIONS, buildRolePack, countRoles } from './game/roles'
@@ -33,14 +36,6 @@ type Player = {
   mic?: boolean
 }
 
-type Claim = {
-  id: number
-  player: string
-  role: string
-  quote: string
-  tone: 'violet' | 'cyan' | 'gold' | 'red'
-}
-
 const HUMAN_ID = 1
 
 const players: Player[] = [
@@ -53,13 +48,6 @@ const players: Player[] = [
   { id: 7, name: 'Kerem', initial: 'K', accent: '#79634e', status: 'not-ready' },
   { id: 8, name: 'Elif', initial: 'E', accent: '#6e5a75', status: 'ready' },
   { id: 9, name: 'Can', initial: 'C', accent: '#716550', status: 'joining' },
-]
-
-const claims: Claim[] = [
-  { id: 1, player: 'Ali', role: 'Kâhin', quote: 'Dün gece Deniz masum çıktı.', tone: 'violet' },
-  { id: 2, player: 'Ayşe', role: 'Kâhin', quote: 'Ben de Deniz’i gördüm; masum.', tone: 'cyan' },
-  { id: 3, player: 'Mert', role: 'Koruyucu', quote: 'Dün gece Elif’i korudum.', tone: 'gold' },
-  { id: 4, player: 'Burak', role: 'Köylü', quote: 'Ben sıradan köylüyüm.', tone: 'red' },
 ]
 
 const roleCounts = countRoles(buildRolePack(players.length))
@@ -136,13 +124,33 @@ export default function App() {
   const [tab, setTab] = useState<'claims' | 'votes' | 'clues'>('claims')
   const [notes, setNotes] = useState(['Ali ve Ayşe aynı rolü iddia ediyor.', 'Burak’ın tavırları gergin.'])
   const [note, setNote] = useState('')
-  const conflict = useMemo(() => claims.filter((claim) => claim.role === 'Kâhin'), [])
+  const [claimComposerOpen, setClaimComposerOpen] = useState(false)
+  const [claimantId, setClaimantId] = useState(HUMAN_ID)
+  const [claimRole, setClaimRole] = useState<RoleId>('seer')
+  const [claimQuote, setClaimQuote] = useState('')
 
   const addNote = () => {
     const text = note.trim()
     if (!text) return
     setNotes((current) => [...current, text])
     setNote('')
+  }
+
+  const addRoleClaim = () => {
+    if (!game) return
+    try {
+      const next = recordRoleClaim(game, claimantId, claimRole, claimQuote)
+      setGame(next)
+      setClaimQuote('')
+      setClaimComposerOpen(false)
+    } catch {
+      // UI yalnızca yaşayan oyuncuları listeler; motor yine de güvenlik sınırını korur.
+    }
+  }
+
+  const removeRoleClaim = (claimId: number) => {
+    if (!game) return
+    setGame(withdrawClaim(game, claimId))
   }
 
   const launchGame = () => {
@@ -235,8 +243,22 @@ export default function App() {
           note={note}
           setNote={setNote}
           addNote={addNote}
-          conflict={conflict}
           onVote={toVoting}
+          onOpenClaimComposer={() => setClaimComposerOpen(true)}
+          onWithdrawClaim={removeRoleClaim}
+        />
+      )}
+      {claimComposerOpen && game && (
+        <ClaimComposer
+          game={game}
+          claimantId={claimantId}
+          role={claimRole}
+          quote={claimQuote}
+          setClaimantId={setClaimantId}
+          setRole={setClaimRole}
+          setQuote={setClaimQuote}
+          onClose={() => setClaimComposerOpen(false)}
+          onSave={addRoleClaim}
         />
       )}
       {screen === 'vote' && game && (
@@ -365,8 +387,9 @@ function Day({
   note,
   setNote,
   addNote,
-  conflict,
   onVote,
+  onOpenClaimComposer,
+  onWithdrawClaim,
 }: {
   game: GameState
   selected: number | null
@@ -377,8 +400,9 @@ function Day({
   note: string
   setNote: (value: string) => void
   addNote: () => void
-  conflict: Claim[]
   onVote: () => void
+  onOpenClaimComposer: () => void
+  onWithdrawClaim: (claimId: number) => void
 }) {
   const publicPlayers = getPrivatePlayerView(game, HUMAN_ID).publicPlayers
   const aliveById = new Map(publicPlayers.map((player) => [player.id, player.alive]))
@@ -419,7 +443,13 @@ function Day({
           <button className={tab === 'votes' ? 'active' : ''} onClick={() => setTab('votes')}>Oylama Geçmişi</button>
           <button className={tab === 'clues' ? 'active' : ''} onClick={() => setTab('clues')}>Rol İpuçları</button>
         </div>
-        {tab === 'claims' && <Claims conflict={conflict} />}
+        {tab === 'claims' && (
+          <Claims
+            game={game}
+            onOpenComposer={onOpenClaimComposer}
+            onWithdrawClaim={onWithdrawClaim}
+          />
+        )}
         {tab === 'votes' && <Votes />}
         {tab === 'clues' && <Clues />}
         <div className="notes">
@@ -433,26 +463,126 @@ function Day({
   )
 }
 
-function Claims({ conflict }: { conflict: Claim[] }) {
+function Claims({
+  game,
+  onOpenComposer,
+  onWithdrawClaim,
+}: {
+  game: GameState
+  onOpenComposer: () => void
+  onWithdrawClaim: (claimId: number) => void
+}) {
+  const groups = groupRoleClaims(game)
+
   return (
-    <div className="claim-wrap">
-      <div className="claim-list">
-        {claims.map((claim) => (
-          <div className={'claim ' + claim.tone} key={claim.id}>
-            <span>{claim.player[0]}</span>
-            <div><b>{claim.player} <em>→ {claim.role}</em></b><p>“{claim.quote}”</p></div>
-            <small>3. Gün</small>
-          </div>
-        ))}
-      </div>
-      <div className="conflict">
-        <h3>⚔ Çelişen İddia</h3>
+    <div className="claim-board">
+      <div className="claim-board-head">
         <div>
-          {conflict.slice(0, 2).map((claim, index) => (
-            <section key={claim.id}><span>{claim.player[0]}</span><b>{claim.player}<small>{claim.role}</small></b>{index === 0 && <em>×</em>}</section>
-          ))}
+          <b>Rol İddiaları</b>
+          <small>Sistem sözleri düzenler; yorumlamaz.</small>
         </div>
+        <button onClick={onOpenComposer}>＋ İddia Kaydet</button>
       </div>
+
+      {groups.length === 0 ? (
+        <div className="claim-empty">
+          <span>◇</span>
+          <b>Henüz yapılandırılmış rol iddiası yok.</b>
+          <small>Köy meclisinde duyduğun bir rol iddiasını buraya kaydedebilirsin.</small>
+        </div>
+      ) : (
+        <div className="claim-groups">
+          {groups.map((group) => {
+            const definition = ROLE_DEFINITIONS[group.role]
+            return (
+              <section className={'claim-group claim-group-' + group.role} key={group.role}>
+                <header>
+                  <div>
+                    <span>{roleVisuals[group.role].icon}</span>
+                    <div><b>{definition.name} İddiaları</b><small>{group.claims.length > 1 ? '◇ Birden fazla iddia' : 'Tek aktif iddia'}</small></div>
+                  </div>
+                </header>
+                <div className="claim-group-list">
+                  {group.claims.map((claim) => {
+                    const claimant = players.find((player) => player.id === claim.claimantId)
+                    return (
+                      <article className="claim-card" key={claim.id}>
+                        <span className="avatar" style={{ '--accent': claimant?.accent ?? '#755b48' } as CSSProperties}>{claimant?.initial ?? '?'}</span>
+                        <div>
+                          <b>{claimant?.name ?? 'Oyuncu'}</b>
+                          <small>{claim.round}. Gün · Rol iddiası</small>
+                          {claim.quote && <p>“{claim.quote}”</p>}
+                        </div>
+                        <button title="İddiayı geri çek" onClick={() => onWithdrawClaim(claim.id)}>↶</button>
+                      </article>
+                    )
+                  })}
+                </div>
+              </section>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ClaimComposer({
+  game,
+  claimantId,
+  role,
+  quote,
+  setClaimantId,
+  setRole,
+  setQuote,
+  onClose,
+  onSave,
+}: {
+  game: GameState
+  claimantId: number
+  role: RoleId
+  quote: string
+  setClaimantId: (id: number) => void
+  setRole: (role: RoleId) => void
+  setQuote: (quote: string) => void
+  onClose: () => void
+  onSave: () => void
+}) {
+  const living = game.players.filter((player) => player.alive)
+  const roles = Object.keys(ROLE_DEFINITIONS) as RoleId[]
+
+  return (
+    <div className="claim-modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="claim-modal panel" role="dialog" aria-modal="true" aria-label="Rol iddiası kaydet" onMouseDown={(event) => event.stopPropagation()}>
+        <button className="claim-modal-close" onClick={onClose}>×</button>
+        <small>YAPILANDIRILMIŞ İDDİA</small>
+        <h2>Rol İddiası Kaydet</h2>
+        <p>Kimin ne söylediğini kaydet. Uygulama iddianın doğru veya yanlış olduğuna karar vermez.</p>
+
+        <label>
+          <span>İddiayı yapan</span>
+          <select value={claimantId} onChange={(event) => setClaimantId(Number(event.target.value))}>
+            {living.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}
+          </select>
+        </label>
+
+        <label>
+          <span>İddia edilen rol</span>
+          <select value={role} onChange={(event) => setRole(event.target.value as RoleId)}>
+            {roles.map((roleId) => <option key={roleId} value={roleId}>{ROLE_DEFINITIONS[roleId].name}</option>)}
+          </select>
+        </label>
+
+        <label>
+          <span>Söz / not <em>isteğe bağlı</em></span>
+          <textarea value={quote} onChange={(event) => setQuote(event.target.value)} placeholder="Örn. “Ben Kâhinim, dün gece Can'ı araştırdım.”" maxLength={180} />
+        </label>
+
+        <div className="claim-modal-actions">
+          <button className="back" onClick={onClose}>Vazgeç</button>
+          <button className="start" onClick={onSave}>İddiayı Kaydet <b>›</b></button>
+        </div>
+      </section>
     </div>
   )
 }
