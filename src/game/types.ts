@@ -76,7 +76,7 @@ export type StructuredClaim =
 
 export interface RoleClaimGroup {
   role: RoleId
-  claims: StructuredClaim[]
+  claims: RoleClaim[]
 }
 
 export type NightActionType = 'attack' | 'protect' | 'investigate'
@@ -118,7 +118,7 @@ export interface GameState {
   phase: GamePhase
   round: number
   players: GamePlayer[]
-  claims: RoleClaim[]
+  claims: StructuredClaim[]
   nightActions: NightAction[]
   dayVotes: Record<number, number>
   privateIntel: Record<number, SeerIntel[]>
