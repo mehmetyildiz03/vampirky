@@ -140,7 +140,7 @@ export default function App() {
     createPrivateDeductionState(HUMAN_ID, players.map((player) => player.id)),
   )
   const [selected, setSelected] = useState<number | null>(null)
-  const [tab, setTab] = useState<'claims' | 'votes' | 'clues'>('claims')
+  const [tab, setTab] = useState<'claims' | 'votes' | 'notes'>('claims')
   const [notes, setNotes] = useState<string[]>([])
   const [note, setNote] = useState('')
   const [claimComposerOpen, setClaimComposerOpen] = useState(false)
@@ -158,6 +158,10 @@ export default function App() {
     if (!text) return
     setNotes((current) => [...current, text])
     setNote('')
+  }
+
+  const removeNote = (index: number) => {
+    setNotes((current) => current.filter((_, noteIndex) => noteIndex !== index))
   }
 
   const openClaimComposer = () => {
@@ -330,6 +334,7 @@ export default function App() {
           note={note}
           setNote={setNote}
           addNote={addNote}
+          removeNote={removeNote}
           onVote={toVoting}
           onOpenClaimComposer={openClaimComposer}
           onWithdrawClaim={removeClaim}
@@ -488,6 +493,7 @@ function Day({
   note,
   setNote,
   addNote,
+  removeNote,
   onVote,
   onOpenClaimComposer,
   onWithdrawClaim,
@@ -499,12 +505,13 @@ function Day({
   game: GameState
   selected: number | null
   setSelected: (id: number | null) => void
-  tab: 'claims' | 'votes' | 'clues'
-  setTab: (tab: 'claims' | 'votes' | 'clues') => void
+  tab: 'claims' | 'votes' | 'notes'
+  setTab: (tab: 'claims' | 'votes' | 'notes') => void
   notes: string[]
   note: string
   setNote: (value: string) => void
   addNote: () => void
+  removeNote: (index: number) => void
   onVote: () => void
   onOpenClaimComposer: () => void
   onWithdrawClaim: (claimId: number) => void
@@ -515,6 +522,14 @@ function Day({
 }) {
   const publicPlayers = getPrivatePlayerView(game, HUMAN_ID).publicPlayers
   const aliveById = new Map(publicPlayers.map((player) => [player.id, player.alive]))
+
+  const activeClaimCount = getActiveClaims(game).length
+  const voteRoundCount = new Set(getVoteHistory(game).map((vote) => vote.round)).size
+  const playerPrivateNoteCount = Object.values(deduction.notes).reduce(
+    (total, playerNotes) => total + playerNotes.length,
+    0,
+  )
+  const privateNoteCount = notes.length + playerPrivateNoteCount
 
   return (
     <main className="game">
@@ -555,25 +570,44 @@ function Day({
         <button className="vote" onClick={onVote}>Oylamaya Geç <b>›</b></button>
       </section>
       <aside className="panel deduction">
-        <blockquote>“Aynı köyde, farklı gerçekler...”</blockquote>
-        <div className="tabs">
-          <button className={tab === 'claims' ? 'active' : ''} onClick={() => setTab('claims')}>İddialar</button>
-          <button className={tab === 'votes' ? 'active' : ''} onClick={() => setTab('votes')}>Oylama Geçmişi</button>
-          <button className={tab === 'clues' ? 'active' : ''} onClick={() => setTab('clues')}>Rol İpuçları</button>
-        </div>
-        {tab === 'claims' && (
-          <Claims
-            game={game}
-            onOpenComposer={onOpenClaimComposer}
-            onWithdrawClaim={onWithdrawClaim}
-          />
-        )}
-        {tab === 'votes' && <Votes game={game} />}
-        {tab === 'clues' && <Clues />}
-        <div className="notes">
-          <div><b>▤ Benim Notlarım</b><small>Sadece sana görünür</small></div>
-          {notes.map((item, index) => <label key={index}><input type="checkbox" defaultChecked={index < 2} />{item}</label>)}
-          <div className="note-input"><input value={note} onChange={(event) => setNote(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && addNote()} placeholder="Not ekle..." /><button onClick={addNote}>＋</button></div>
+        <header className="deduction-head">
+          <div>
+            <small>ÖZEL DEDÜKSİYON DEFTERİ</small>
+            <b>Köy Kayıtları</b>
+          </div>
+          <span>{game.round}. Gün</span>
+        </header>
+        <blockquote>“Sistem kayıt tutar. Kararı sen verirsin.”</blockquote>
+        <nav className="deduction-tabs" aria-label="Dedüksiyon bölümleri">
+          <button className={tab === 'claims' ? 'active' : ''} onClick={() => setTab('claims')}>
+            <span>◇</span><b>İddialar</b><em>{activeClaimCount}</em>
+          </button>
+          <button className={tab === 'votes' ? 'active' : ''} onClick={() => setTab('votes')}>
+            <span>🗳</span><b>Oylar</b><em>{voteRoundCount}</em>
+          </button>
+          <button className={tab === 'notes' ? 'active' : ''} onClick={() => setTab('notes')}>
+            <span>▤</span><b>Notlar</b><em>{privateNoteCount}</em>
+          </button>
+        </nav>
+        <div className="deduction-body">
+          {tab === 'claims' && (
+            <Claims
+              game={game}
+              onOpenComposer={onOpenClaimComposer}
+              onWithdrawClaim={onWithdrawClaim}
+            />
+          )}
+          {tab === 'votes' && <Votes game={game} />}
+          {tab === 'notes' && (
+            <NotesPane
+              notes={notes}
+              note={note}
+              setNote={setNote}
+              addNote={addNote}
+              removeNote={removeNote}
+              deduction={deduction}
+            />
+          )}
         </div>
       </aside>
       {selected && (
@@ -915,8 +949,97 @@ function Votes({ game }: { game: GameState }) {
   )
 }
 
-function Clues() {
-  return <div className="clues"><p><b>◉ Kâhin iddiası</b><br />Aynı rol için iki farklı iddia var.</p><p><b>⬟ Koruma iddiası</b><br />Mert, Elif’i koruduğunu söylüyor.</p><p><b>⚑ Temel kural</b><br />Sistem doğruyu seçmez; yalnızca açıklanan bilgiyi düzenler.</p></div>
+function NotesPane({
+  notes,
+  note,
+  setNote,
+  addNote,
+  removeNote,
+  deduction,
+}: {
+  notes: string[]
+  note: string
+  setNote: (value: string) => void
+  addNote: () => void
+  removeNote: (index: number) => void
+  deduction: PrivateDeductionState
+}) {
+  const suspicious = players.filter(
+    (player) => player.id !== HUMAN_ID && getDeductionMark(deduction, player.id) === 'suspicious',
+  )
+  const trusted = players.filter(
+    (player) => player.id !== HUMAN_ID && getDeductionMark(deduction, player.id) === 'trusted',
+  )
+  const uncertainCount = players.filter(
+    (player) => player.id !== HUMAN_ID && getDeductionMark(deduction, player.id) === 'uncertain',
+  ).length
+
+  return (
+    <div className="notes-pane">
+      <section className="private-map">
+        <header>
+          <div><b>Özel Haritam</b><small>Senin değerlendirmelerin · diğer oyuncular göremez</small></div>
+          <span>{uncertainCount} kararsız</span>
+        </header>
+        <div className="private-map-groups">
+          <div className="private-map-group suspicious">
+            <small>ŞÜPHELİ</small>
+            {suspicious.length > 0 ? (
+              <div>{suspicious.map((player) => <span key={player.id}>{player.name}</span>)}</div>
+            ) : <em>İşaretlenmiş oyuncu yok</em>}
+          </div>
+          <div className="private-map-group trusted">
+            <small>GÜVENİYORUM</small>
+            {trusted.length > 0 ? (
+              <div>{trusted.map((player) => <span key={player.id}>{player.name}</span>)}</div>
+            ) : <em>İşaretlenmiş oyuncu yok</em>}
+          </div>
+        </div>
+        <p>Değerlendirmeyi değiştirmek veya oyuncuya özel not eklemek için portresine dokun.</p>
+      </section>
+
+      <section className="general-notes">
+        <header>
+          <div><b>Genel Notlarım</b><small>Belirli bir oyuncuya bağlı olmayan özel notlar</small></div>
+          <span>{notes.length}</span>
+        </header>
+        <div className="general-note-compose">
+          <textarea
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                addNote()
+              }
+            }}
+            placeholder="Köy hakkında özel not..."
+            maxLength={240}
+          />
+          <button disabled={!note.trim()} onClick={addNote}>＋</button>
+        </div>
+        {notes.length === 0 ? (
+          <div className="general-notes-empty">
+            <span>⌁</span>
+            <b>Henüz genel not yok.</b>
+            <small>Oyuncuya özel notlar ilgili oyuncunun profilinde tutulur.</small>
+          </div>
+        ) : (
+          <div className="general-note-list">
+            {[...notes].reverse().map((item, reverseIndex) => {
+              const originalIndex = notes.length - 1 - reverseIndex
+              return (
+                <article key={originalIndex + '-' + item}>
+                  <p>{item}</p>
+                  <button title="Notu sil" onClick={() => removeNote(originalIndex)}>×</button>
+                </article>
+              )
+            })}
+          </div>
+        )}
+      </section>
+    </div>
+  )
 }
 
 function Inspector({
