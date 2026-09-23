@@ -158,6 +158,19 @@ export default function App() {
   const [claimQuote, setClaimQuote] = useState('')
   const [claimSourceMessageId, setClaimSourceMessageId] = useState<number | null>(null)
   const [ghostReturnScreen, setGhostReturnScreen] = useState<'dawn' | 'vote-result'>('dawn')
+  const [chatLastRead, setChatLastRead] = useState<Record<ChatChannel, number>>({
+    village: 0,
+    vampire: 0,
+    ghost: 0,
+  })
+
+  const markChatRead = (channel: ChatChannel, messageId: number) => {
+    setChatLastRead((current) =>
+      messageId <= current[channel]
+        ? current
+        : { ...current, [channel]: messageId },
+    )
+  }
 
   const addNote = () => {
     const text = note.trim()
@@ -638,11 +651,6 @@ function Day({
   const [chatChannel, setChatChannel] = useState<ChatChannel>(() =>
     getChatAccess(game, HUMAN_ID).writable.includes('ghost') ? 'ghost' : 'village',
   )
-  const [chatLastRead, setChatLastRead] = useState<Record<ChatChannel, number>>({
-    village: 0,
-    vampire: 0,
-    ghost: 0,
-  })
   const [chatFocusMessageId, setChatFocusMessageId] = useState<number | null>(null)
   const publicPlayers = getPrivatePlayerView(game, HUMAN_ID).publicPlayers
   const aliveById = new Map(publicPlayers.map((player) => [player.id, player.alive]))
