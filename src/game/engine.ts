@@ -1,6 +1,9 @@
 import { secureShuffle } from './random'
 import { ROLE_DEFINITIONS, buildRolePack } from './roles'
 import type {
+  ChatAccess,
+  ChatChannel,
+  ChatMessage,
   GameEvent,
   GamePlayer,
   GameState,
@@ -29,6 +32,7 @@ function cloneState(state: GameState): GameState {
     ...state,
     players: state.players.map((player) => ({ ...player })),
     claims: state.claims.map((claim) => ({ ...claim })),
+    chatMessages: state.chatMessages.map((message) => ({ ...message })),
     nightActions: state.nightActions.map((action) => ({ ...action })),
     dayVotes: { ...state.dayVotes },
     voteHistory: state.voteHistory.map((vote) => ({ ...vote })),
@@ -108,6 +112,7 @@ export function createGame(players: readonly PlayerSeed[]): GameState {
     round: 1,
     players: assignedPlayers,
     claims: [],
+    chatMessages: [],
     nightActions: [],
     dayVotes: {},
     voteHistory: [],
@@ -116,6 +121,7 @@ export function createGame(players: readonly PlayerSeed[]): GameState {
     lastVote: null,
     winner: null,
     nextClaimId: 1,
+    nextChatMessageId: 1,
     nextEventId: 1,
     events: [],
   }
@@ -321,6 +327,73 @@ export function resolveVote(state: GameState): GameState {
   )
 
   return applyWinner(next)
+}
+
+export function getChatAccess(
+  state: GameState,
+  viewerId: number,
+): ChatAccess {
+  const viewer = findPlayer(state, viewerId)
+
+  if (!viewer.alive) {
+    return {
+      readable: ['village', 'ghost'],
+      writable: state.phase === 'ended' ? [] : ['ghost'],
+    }
+  }
+
+  const readable: ChatChannel[] = ['village']
+  const writable: ChatChannel[] = []
+
+  if (['discussion', 'voting'].includes(state.phase)) {
+    writable.push('village')
+  }
+
+  if (viewer.secretRole === 'vampire') {
+    readable.push('vampire')
+    if (state.phase === 'night') writable.push('vampire')
+  }
+
+  return { readable, writable }
+}
+
+export function getVisibleChatMessages(
+  state: GameState,
+  viewerId: number,
+): ChatMessage[] {
+  const readable = new Set(getChatAccess(state, viewerId).readable)
+  return state.chatMessages
+    .filter((message) => readable.has(message.channel))
+    .map((message) => ({ ...message }))
+}
+
+export function sendChatMessage(
+  state: GameState,
+  authorId: number,
+  channel: ChatChannel,
+  text: string,
+): GameState {
+  findPlayer(state, authorId)
+  const access = getChatAccess(state, authorId)
+  if (!access.writable.includes(channel)) {
+    throw new Error('Player cannot write to this chat channel right now.')
+  }
+
+  const normalized = text.trim()
+  if (!normalized) throw new Error('Chat message cannot be empty.')
+  if (normalized.length > 280) throw new Error('Chat message is too long.')
+
+  const next = cloneState(state)
+  next.chatMessages.push({
+    id: next.nextChatMessageId,
+    round: next.round,
+    phase: next.phase,
+    channel,
+    authorId,
+    text: normalized,
+  })
+  next.nextChatMessageId += 1
+  return next
 }
 
 export function recordRoleClaim(

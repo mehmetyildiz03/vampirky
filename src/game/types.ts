@@ -126,6 +126,22 @@ export type PlayerTimelineEntry =
       vote: VoteRecord
     }
 
+export type ChatChannel = 'village' | 'vampire' | 'ghost'
+
+export interface ChatMessage {
+  id: number
+  round: number
+  phase: GamePhase
+  channel: ChatChannel
+  authorId: number
+  text: string
+}
+
+export interface ChatAccess {
+  readable: ChatChannel[]
+  writable: ChatChannel[]
+}
+
 export interface GameEvent {
   id: number
   round: number
@@ -139,6 +155,7 @@ export interface GameState {
   round: number
   players: GamePlayer[]
   claims: StructuredClaim[]
+  chatMessages: ChatMessage[]
   nightActions: NightAction[]
   dayVotes: Record<number, number>
   voteHistory: VoteRecord[]
@@ -147,6 +164,7 @@ export interface GameState {
   lastVote: VoteResolution | null
   winner: Winner
   nextClaimId: number
+  nextChatMessageId: number
   nextEventId: number
   events: GameEvent[]
 }
