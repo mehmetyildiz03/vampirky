@@ -5,7 +5,9 @@ import {
   beginVoting,
   createGame,
   getActiveClaims,
+  getPlayerTimeline,
   getPrivatePlayerView,
+  getVoteHistory,
   groupRoleClaims,
   recordAccusationClaim,
   recordActionClaim,
@@ -477,8 +479,8 @@ function Day({
         <Brand />
         <div className="phase-badge"><b>☀ {game.round}. Gün</b><span>Köy Meclisi</span><small>⌛ Tartışma · 01:18</small></div>
         <div className="ring">
-          {players.slice(0, 8).map((player, index) => {
-            const angle = index / 8 * Math.PI * 2 - Math.PI / 2
+          {players.map((player, index) => {
+            const angle = index / players.length * Math.PI * 2 - Math.PI / 2
             const x = 50 + Math.cos(angle) * 40
             const y = 50 + Math.sin(angle) * 37
             const alive = aliveById.get(player.id) ?? true
@@ -514,7 +516,7 @@ function Day({
             onWithdrawClaim={onWithdrawClaim}
           />
         )}
-        {tab === 'votes' && <Votes />}
+        {tab === 'votes' && <Votes game={game} />}
         {tab === 'clues' && <Clues />}
         <div className="notes">
           <div><b>▤ Benim Notlarım</b><small>Sadece sana görünür</small></div>
@@ -522,7 +524,7 @@ function Day({
           <div className="note-input"><input value={note} onChange={(event) => setNote(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && addNote()} placeholder="Not ekle..." /><button onClick={addNote}>＋</button></div>
         </div>
       </aside>
-      {selected && <Inspector player={players.find((player) => player.id === selected)!} alive={aliveById.get(selected) ?? true} close={() => setSelected(null)} />}
+      {selected && <Inspector game={game} player={players.find((player) => player.id === selected)!} alive={aliveById.get(selected) ?? true} close={() => setSelected(null)} />}
     </main>
   )
 }
@@ -807,22 +809,150 @@ function ClaimComposer({
   )
 }
 
-function Votes() {
-  return <div className="history">{[['1. Gün', 'Burak', '4 oy'], ['2. Gün', 'Can', '5 oy'], ['3. Gün', 'Elif', '4 oy']].map((row) => <div key={row[0]}><b>{row[0]}</b><span>● ● ● →</span><strong>{row[1]}</strong><small>{row[2]}</small></div>)}</div>
+function Votes({ game }: { game: GameState }) {
+  const history = getVoteHistory(game)
+  const rounds = [...new Set(history.map((vote) => vote.round))].sort((a, b) => b - a)
+
+  if (rounds.length === 0) {
+    return (
+      <div className="vote-history-empty">
+        <span>🗳</span>
+        <b>Henüz tamamlanmış oylama yok.</b>
+        <small>Bir oylama sonuçlandığında tüm nihai oylar burada görünür.</small>
+      </div>
+    )
+  }
+
+  return (
+    <div className="vote-history">
+      {rounds.map((round) => (
+        <section key={round}>
+          <header><b>{round}. Gün Oylaması</b><small>{history.filter((vote) => vote.round === round).length} oy</small></header>
+          <div>
+            {history
+              .filter((vote) => vote.round === round)
+              .map((vote) => {
+                const voter = players.find((player) => player.id === vote.voterId)
+                const target = players.find((player) => player.id === vote.targetId)
+                return (
+                  <article key={round + '-' + vote.voterId}>
+                    <span className="avatar" style={{ '--accent': voter?.accent ?? '#66584b' } as CSSProperties}>{voter?.initial ?? '?'}</span>
+                    <b>{voter?.name ?? 'Oyuncu'}</b>
+                    <span>→</span>
+                    <strong>{target?.name ?? 'Oyuncu'}</strong>
+                  </article>
+                )
+              })}
+          </div>
+        </section>
+      ))}
+    </div>
+  )
 }
 
 function Clues() {
   return <div className="clues"><p><b>◉ Kâhin iddiası</b><br />Aynı rol için iki farklı iddia var.</p><p><b>⬟ Koruma iddiası</b><br />Mert, Elif’i koruduğunu söylüyor.</p><p><b>⚑ Temel kural</b><br />Sistem doğruyu seçmez; yalnızca açıklanan bilgiyi düzenler.</p></div>
 }
 
-function Inspector({ player, alive, close }: { player: Player; alive: boolean; close: () => void }) {
+function Inspector({
+  game,
+  player,
+  alive,
+  close,
+}: {
+  game: GameState
+  player: Player
+  alive: boolean
+  close: () => void
+}) {
+  const timeline = [...getPlayerTimeline(game, player.id)].reverse()
+
+  const describeClaim = (claim: StructuredClaim) => {
+    if (claim.kind === 'role') {
+      return {
+        icon: roleVisuals[claim.role].icon,
+        title: `${ROLE_DEFINITIONS[claim.role].name} olduğunu iddia etti`,
+        target: null as Player | null,
+        detail: null as string | null,
+      }
+    }
+
+    const target = players.find((candidate) => candidate.id === claim.targetId) ?? null
+    const meta = claimTypeMeta(claim)
+    return {
+      icon: meta.icon,
+      title: meta.label,
+      target,
+      detail: meta.detail,
+    }
+  }
+
   return (
-    <div className="inspector">
-      <button onClick={close}>×</button>
-      <span className="avatar big" style={{ '--accent': player.accent } as CSSProperties}>{player.initial}</span>
-      <h2>{player.name}</h2><em>{alive ? '● Hayatta' : '☠ Öldü'}</em><hr />
-      <b>Oylama geçmişi</b><p>1. Gün → Bora</p><p>2. Gün → Ayşe</p><p>3. Gün → Can</p>
-      <div><button className="bad">✕ Şüpheli</button><button>? Emin Değilim</button><button className="good">✓ Güveniyorum</button></div>
+    <div className="inspector inspector-timeline">
+      <button className="inspector-close" onClick={close}>×</button>
+
+      <div className="inspector-profile">
+        <span className="avatar big" style={{ '--accent': player.accent } as CSSProperties}>{player.initial}</span>
+        <div>
+          <h2>{player.name}</h2>
+          <em className={alive ? 'alive-label' : 'dead-label'}>{alive ? '● Hayatta' : '☠ Öldü'}</em>
+        </div>
+      </div>
+
+      <div className="inspector-trust">
+        <button className="bad">✕ Şüpheli</button>
+        <button>? Emin Değilim</button>
+        <button className="good">✓ Güveniyorum</button>
+      </div>
+
+      <div className="timeline-head">
+        <div><b>Davranış Geçmişi</b><small>İddialar, beyanlar ve nihai oylar</small></div>
+        <span>{timeline.length}</span>
+      </div>
+
+      {timeline.length === 0 ? (
+        <div className="timeline-empty">
+          <span>⌁</span>
+          <b>Henüz kayıt yok.</b>
+          <small>Bu oyuncunun yapılandırılmış bir sözü veya tamamlanmış oyu bulunmuyor.</small>
+        </div>
+      ) : (
+        <div className="player-timeline">
+          {timeline.map((entry) => {
+            if (entry.kind === 'vote') {
+              const target = players.find((candidate) => candidate.id === entry.vote.targetId)
+              return (
+                <article className="timeline-entry timeline-vote" key={entry.key}>
+                  <div className="timeline-marker">🗳</div>
+                  <div className="timeline-content">
+                    <small>{entry.round}. Gün · Oy</small>
+                    <b>{target?.name ?? 'Oyuncu'} için oy kullandı</b>
+                  </div>
+                </article>
+              )
+            }
+
+            const described = describeClaim(entry.claim)
+            return (
+              <article className={'timeline-entry timeline-' + entry.claim.kind + (entry.claim.status === 'withdrawn' ? ' withdrawn' : '')} key={entry.key}>
+                <div className="timeline-marker">{described.icon}</div>
+                <div className="timeline-content">
+                  <small>
+                    {entry.round}. Gün · {claimTypeMeta(entry.claim).label}
+                    {entry.claim.status === 'withdrawn' && <em> · geri çekildi</em>}
+                  </small>
+                  <b>{described.title}</b>
+                  {described.target && (
+                    <p><span>→ {described.target.name}</span>{described.detail && <> · {described.detail}</>}</p>
+                  )}
+                  {entry.claim.kind === 'information' && <p>{entry.claim.statement}</p>}
+                  {entry.claim.quote && <blockquote>“{entry.claim.quote}”</blockquote>}
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -853,8 +983,8 @@ function Night({
         <Brand />
         <div className="phase-badge night"><b>☾ Gece {game.round}</b><span>Köy Uyuyor</span><small>⌛ Rol Aşaması · 00:38</small></div>
         <div className="ring sleeping">
-          {players.slice(0, 8).map((player, index) => {
-            const angle = index / 8 * Math.PI * 2 - Math.PI / 2
+          {players.map((player, index) => {
+            const angle = index / players.length * Math.PI * 2 - Math.PI / 2
             const x = 50 + Math.cos(angle) * 40
             const y = 50 + Math.sin(angle) * 37
             const enabled = targetIds.has(player.id)
