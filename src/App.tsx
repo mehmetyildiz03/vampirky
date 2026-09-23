@@ -24,6 +24,7 @@ import {
 } from './game/engine'
 import { completeNightWithBots, completeVoteWithBots } from './game/demo'
 import { ROLE_DEFINITIONS, buildRolePack, countRoles } from './game/roles'
+import { PHASE_DURATIONS_SECONDS, formatPhaseTime, isPhaseTimeUrgent } from './game/timing'
 import {
   addPrivatePlayerNote,
   createPrivateDeductionState,
@@ -151,6 +152,59 @@ function useMediaQuery(query: string) {
   }, [query])
 
   return matches
+}
+
+function usePhaseCountdown(
+  durationSeconds: number,
+  resetKey: string,
+  onExpire: () => void,
+) {
+  const [remaining, setRemaining] = useState(durationSeconds)
+  const expireRef = useRef(onExpire)
+  const expiredRef = useRef(false)
+  expireRef.current = onExpire
+
+  useEffect(() => {
+    expiredRef.current = false
+    const deadline = Date.now() + durationSeconds * 1000
+
+    const tick = () => {
+      const next = Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
+      setRemaining(next)
+
+      if (next === 0 && !expiredRef.current) {
+        expiredRef.current = true
+        expireRef.current()
+      }
+    }
+
+    tick()
+    const interval = window.setInterval(tick, 250)
+    return () => window.clearInterval(interval)
+  }, [durationSeconds, resetKey])
+
+  return remaining
+}
+
+function PhaseTimer({
+  seconds,
+  label,
+}: {
+  seconds: number
+  label: string
+}) {
+  const urgent = isPhaseTimeUrgent(seconds)
+
+  return (
+    <small
+      className={'phase-timer ' + (urgent ? 'urgent' : '')}
+      aria-live={urgent ? 'polite' : 'off'}
+    >
+      <span>⌛</span>
+      <b>{label}</b>
+      <em>{formatPhaseTime(seconds)}</em>
+    </small>
+  )
 }
 
 export default function App() {
@@ -350,14 +404,14 @@ export default function App() {
     setScreen('night')
   }
 
-  const finishNight = () => {
+  const resolveNightPhase = (includeHumanAction: boolean) => {
     if (!game) return
     const view = getPrivatePlayerView(game, HUMAN_ID)
     const self = view.publicPlayers.find((player) => player.id === HUMAN_ID)
     const action = ROLE_DEFINITIONS[view.selfRole].nightAction
     let next = game
 
-    if (self?.alive && action) {
+    if (includeHumanAction && self?.alive && action) {
       if (selected === null) return
       next = submitNightAction(next, HUMAN_ID, selected)
     }
@@ -379,6 +433,9 @@ export default function App() {
     }
   }
 
+  const finishNight = () => resolveNightPhase(true)
+  const finishNightFromTimer = () => resolveNightPhase(false)
+
   const toDiscussion = () => {
     if (!game) return
     setGame(beginDiscussion(game))
@@ -388,17 +445,18 @@ export default function App() {
 
   const toVoting = () => {
     if (!game) return
+    closeClaimComposer()
     setGame(beginVoting(game))
     setSelected(null)
     setScreen('vote')
   }
 
-  const finishVote = () => {
+  const resolveVotePhase = (includeHumanVote: boolean) => {
     if (!game) return
     const self = game.players.find((player) => player.id === HUMAN_ID)
     let next = game
 
-    if (self?.alive) {
+    if (includeHumanVote && self?.alive) {
       if (selected === null) return
       next = submitVote(next, HUMAN_ID, selected)
     }
@@ -420,6 +478,9 @@ export default function App() {
     }
   }
 
+  const finishVote = () => resolveVotePhase(true)
+  const finishVoteFromTimer = () => resolveVotePhase(false)
+
   const toNextNight = () => {
     if (!game) return
     setGame(beginNight(game))
@@ -439,6 +500,7 @@ export default function App() {
           selected={selected}
           setSelected={setSelected}
           onResolve={finishNight}
+          onTimeout={finishNightFromTimer}
           onSendChat={sendHumanChat}
           onMarkChatRead={markChatRead}
         />
@@ -466,6 +528,7 @@ export default function App() {
           addNote={addNote}
           removeNote={removeNote}
           onVote={toVoting}
+          onTimeout={toVoting}
           onOpenClaimComposer={openClaimComposer}
           onWithdrawClaim={removeClaim}
           deduction={deduction}
@@ -503,7 +566,13 @@ export default function App() {
         />
       )}
       {screen === 'vote' && game && (
-        <Voting game={game} selected={selected} setSelected={setSelected} onResolve={finishVote} />
+        <Voting
+          game={game}
+          selected={selected}
+          setSelected={setSelected}
+          onResolve={finishVote}
+          onTimeout={finishVoteFromTimer}
+        />
       )}
       {screen === 'vote-result' && game && <VoteResult game={game} onContinue={toNextNight} />}
       {screen === 'end' && game && <EndScreen game={game} onAgain={launchGame} onHome={() => setScreen('home')} />}
@@ -595,6 +664,11 @@ function Role({ icon, name, n }: { icon: string; name: string; n: string }) {
 }
 
 function RoleReveal({ game, onContinue }: { game: GameState; onContinue: () => void }) {
+  const nightSeconds = usePhaseCountdown(
+    PHASE_DURATIONS_SECONDS.night,
+    `night-${game.round}`,
+    onTimeout,
+  )
   const view = getPrivatePlayerView(game, HUMAN_ID)
   const visual = roleVisuals[view.selfRole]
   const allies = view.knownVampireIds
@@ -630,6 +704,7 @@ function Day({
   addNote,
   removeNote,
   onVote,
+  onTimeout,
   onOpenClaimComposer,
   onWithdrawClaim,
   deduction,
@@ -652,6 +727,7 @@ function Day({
   addNote: () => void
   removeNote: (index: number) => void
   onVote: () => void
+  onTimeout: () => void
   onOpenClaimComposer: () => void
   onWithdrawClaim: (claimId: number) => void
   deduction: PrivateDeductionState
@@ -666,6 +742,11 @@ function Day({
   const [panelMode, setPanelMode] = useState<'chat' | 'deduction'>('chat')
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
   const mobileLayout = useMediaQuery('(max-width: 900px)')
+  const discussionSeconds = usePhaseCountdown(
+    PHASE_DURATIONS_SECONDS.discussion,
+    `discussion-${game.round}`,
+    onTimeout,
+  )
   const [chatChannel, setChatChannel] = useState<ChatChannel>(() =>
     getChatAccess(game, HUMAN_ID).writable.includes('ghost') ? 'ghost' : 'village',
   )
@@ -715,7 +796,11 @@ function Day({
     <main className="game">
       <section className="council">
         <Brand />
-        <div className="phase-badge"><b>☀ {game.round}. Gün</b><span>Köy Meclisi</span><small>⌛ Tartışma · 01:18</small></div>
+        <div className="phase-badge">
+          <b>☀ {game.round}. Gün</b>
+          <span>Köy Meclisi</span>
+          <PhaseTimer seconds={discussionSeconds} label="Tartışma" />
+        </div>
         <div className="ring">
           {players.map((player, index) => {
             const angle = index / players.length * Math.PI * 2 - Math.PI / 2
@@ -1795,6 +1880,7 @@ function Night({
   selected,
   setSelected,
   onResolve,
+  onTimeout,
   onSendChat,
   onMarkChatRead,
 }: {
@@ -1802,6 +1888,7 @@ function Night({
   selected: number | null
   setSelected: (id: number | null) => void
   onResolve: () => void
+  onTimeout: () => void
   onSendChat: (channel: ChatChannel, text: string) => void
   onMarkChatRead: (channel: ChatChannel, messageId: number) => void
 }) {
@@ -1830,7 +1917,11 @@ function Night({
     <main className="game night-game">
       <section className="council">
         <Brand />
-        <div className="phase-badge night"><b>☾ Gece {game.round}</b><span>Köy Uyuyor</span><small>⌛ Rol Aşaması · 00:38</small></div>
+        <div className="phase-badge night">
+          <b>☾ Gece {game.round}</b>
+          <span>Köy Uyuyor</span>
+          <PhaseTimer seconds={nightSeconds} label="Rol Aşaması" />
+        </div>
         <div className="ring sleeping">
           {players.map((player, index) => {
             const angle = index / players.length * Math.PI * 2 - Math.PI / 2
@@ -1883,7 +1974,9 @@ function Night({
           <div className={'target ' + (picked ? 'active' : '')}><span>{picked?.name[0] ?? '•'}</span><b>{picked?.name ?? (action ? 'Oyuncu seçilmedi' : 'Gece devam ediyor')}</b><em>{visual.icon}</em></div>
         </section>
         <button className="seer-btn" disabled={!canAct} onClick={onResolve}>{visual.icon} {self?.alive ? visual.action : 'Hayalet Olarak İzle'}</button>
-        <small className="hint">Gerçek roller diğer oyunculara açıklanmaz.</small>
+        <small className="hint">
+          Gerçek roller diğer oyunculara açıklanmaz. Onaylanmamış hedef süre biterse pas sayılır.
+        </small>
         {nightChatAvailable && (
           <div className="night-chat">
             <ChatPanel
@@ -1993,12 +2086,19 @@ function Voting({
   selected,
   setSelected,
   onResolve,
+  onTimeout,
 }: {
   game: GameState
   selected: number | null
   setSelected: (id: number | null) => void
   onResolve: () => void
+  onTimeout: () => void
 }) {
+  const votingSeconds = usePhaseCountdown(
+    PHASE_DURATIONS_SECONDS.voting,
+    `voting-${game.round}`,
+    onTimeout,
+  )
   const self = game.players.find((player) => player.id === HUMAN_ID)
   const targets = game.players.filter((player) => player.alive && player.id !== HUMAN_ID)
 
@@ -2007,6 +2107,9 @@ function Voting({
       <Brand />
       <section className="flow-card voting-card">
         <small>🗳 {game.round}. GÜN OYLAMASI</small>
+        <div className="voting-timer">
+          <PhaseTimer seconds={votingSeconds} label="Oylama" />
+        </div>
         <h1>{self?.alive ? 'Köyden kimi göndermek istiyorsun?' : 'Oylamayı hayalet olarak izliyorsun.'}</h1>
         <div className="vote-grid">
           {targets.map((target) => {
@@ -2014,6 +2117,11 @@ function Voting({
             return <button key={target.id} disabled={!self?.alive} className={selected === target.id ? 'picked' : ''} onClick={() => self?.alive && setSelected(target.id)}><span className="avatar" style={{ '--accent': visual.accent } as CSSProperties}>{visual.initial}</span><b>{target.name}</b><em>{selected === target.id ? '✓' : '○'}</em></button>
           })}
         </div>
+        <p className="phase-timeout-note">
+          {self?.alive
+            ? 'Süre dolduğunda kilitlenmemiş oy kullanılmamış sayılır.'
+            : 'Süre dolduğunda oylama otomatik sonuçlanır.'}
+        </p>
         <button className="start" disabled={Boolean(self?.alive) && selected === null} onClick={onResolve}>{self?.alive ? 'Oyumu Kilitle' : 'Oylama Sonucunu Gör'} <b>›</b></button>
       </section>
     </main>

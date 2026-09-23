@@ -115,3 +115,8 @@
   .ghost-transition-main{padding-top:24px}
   .ghost-transition{padding-top:58px}
 }
+
+/* P2.13 — real phase countdowns */
+.phase-timer{display:inline-flex!important;align-items:center;justify-content:center;gap:5px;color:#b8a891!important;font-size:10px!important;font-style:normal}.phase-timer>b{font:inherit;font-weight:400}.phase-timer>em{min-width:38px;color:#e2c894;font-style:normal;font-variant-numeric:tabular-nums;font-weight:700}.phase-timer.urgent>em{color:#ff8b8e}.phase-timer.urgent{animation:phaseTimerPulse .8s ease-in-out infinite alternate}.voting-timer{display:flex;justify-content:center;margin:8px auto 4px}.voting-timer .phase-timer{padding:7px 11px;border:1px solid #5f4934;background:#15120f;font-size:12px!important}.phase-timeout-note{margin:4px auto 10px!important;color:#82796f!important;font-size:10px;line-height:1.4}.phase-badge .phase-timer{margin-top:1px}
+@keyframes phaseTimerPulse{from{opacity:.72}to{opacity:1;text-shadow:0 0 10px #ff6d7055}}
+@media(max-width:650px){.phase-badge .phase-timer{font-size:9px!important}.phase-timer>em{min-width:34px}.voting-timer .phase-timer{font-size:11px!important}}
