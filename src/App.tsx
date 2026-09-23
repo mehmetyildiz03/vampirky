@@ -24,7 +24,14 @@ import {
 } from './game/engine'
 import { completeNightWithBots, completeVoteWithBots } from './game/demo'
 import { ROLE_DEFINITIONS, buildRolePack, countRoles } from './game/roles'
-import { PHASE_DURATIONS_SECONDS, formatPhaseTime, isPhaseTimeUrgent } from './game/timing'
+import {
+  PHASE_DURATIONS_SECONDS,
+  adjustPhaseDuration,
+  formatPhaseTime,
+  isPhaseTimeUrgent,
+  type PhaseDurationKey,
+  type PhaseDurations,
+} from './game/timing'
 import {
   addPrivatePlayerNote,
   createPrivateDeductionState,
@@ -158,19 +165,33 @@ function usePhaseCountdown(
   durationSeconds: number,
   resetKey: string,
   onExpire: () => void,
+  onUrgentTick?: (seconds: number) => void,
 ) {
   const [remaining, setRemaining] = useState(durationSeconds)
   const expireRef = useRef(onExpire)
+  const urgentRef = useRef(onUrgentTick)
   const expiredRef = useRef(false)
+  const lastUrgentSecondRef = useRef<number | null>(null)
   expireRef.current = onExpire
+  urgentRef.current = onUrgentTick
 
   useEffect(() => {
     expiredRef.current = false
+    lastUrgentSecondRef.current = null
     const deadline = Date.now() + durationSeconds * 1000
 
     const tick = () => {
       const next = Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
       setRemaining(next)
+
+      if (
+        isPhaseTimeUrgent(next) &&
+        next !== lastUrgentSecondRef.current &&
+        [10, 5, 3, 2, 1].includes(next)
+      ) {
+        lastUrgentSecondRef.current = next
+        urgentRef.current?.(next)
+      }
 
       if (next === 0 && !expiredRef.current) {
         expiredRef.current = true
@@ -203,6 +224,7 @@ function PhaseTimer({
       <span>⌛</span>
       <b>{label}</b>
       <em>{formatPhaseTime(seconds)}</em>
+      {urgent && <strong>SON {seconds}</strong>}
     </small>
   )
 }
@@ -228,11 +250,59 @@ export default function App() {
   const [claimQuote, setClaimQuote] = useState('')
   const [claimSourceMessageId, setClaimSourceMessageId] = useState<number | null>(null)
   const [ghostReturnScreen, setGhostReturnScreen] = useState<'dawn' | 'vote-result'>('dawn')
+  const [phaseDurations, setPhaseDurations] = useState<PhaseDurations>({
+    ...PHASE_DURATIONS_SECONDS,
+  })
+  const [phaseWarningEnabled, setPhaseWarningEnabled] = useState(true)
+  const audioContextRef = useRef<AudioContext | null>(null)
   const [chatLastRead, setChatLastRead] = useState<Record<ChatChannel, number>>({
     village: 0,
     vampire: 0,
     ghost: 0,
   })
+
+  const playPhaseWarning = (seconds: number) => {
+    if (!phaseWarningEnabled) return
+
+    if ('vibrate' in navigator) {
+      navigator.vibrate(seconds <= 3 ? 90 : 45)
+    }
+
+    const context = audioContextRef.current
+    if (!context || context.state !== 'running') return
+
+    const oscillator = context.createOscillator()
+    const gain = context.createGain()
+    oscillator.type = 'sine'
+    oscillator.frequency.value = seconds <= 3 ? 720 : 560
+    gain.gain.setValueAtTime(0.0001, context.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.055, context.currentTime + 0.01)
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.09)
+    oscillator.connect(gain)
+    gain.connect(context.destination)
+    oscillator.start()
+    oscillator.stop(context.currentTime + 0.1)
+  }
+
+  const preparePhaseWarningAudio = () => {
+    if (!phaseWarningEnabled) return
+    try {
+      const AudioContextClass = window.AudioContext
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContextClass()
+      }
+      void audioContextRef.current.resume()
+    } catch {
+      // Ses kullanılamazsa görsel/haptik uyarı ile devam edilir.
+    }
+  }
+
+  const updatePhaseDuration = (key: PhaseDurationKey, direction: -1 | 1) => {
+    setPhaseDurations((current) => ({
+      ...current,
+      [key]: adjustPhaseDuration(key, current[key], direction),
+    }))
+  }
 
   const markChatRead = (channel: ChatChannel, messageId: number) => {
     setChatLastRead((current) =>
@@ -370,6 +440,7 @@ export default function App() {
   }
 
   const launchGame = () => {
+    preparePhaseWarningAudio()
     const next = createGame(players.map(({ id, name }) => ({ id, name })))
     setGame(next)
     setDeduction(
@@ -492,7 +563,16 @@ export default function App() {
     <div className={'app phase-' + screen}>
       <VillageBackdrop /><Topbar />
       {screen === 'home' && <Home onLobby={() => setScreen('lobby')} onQuick={launchGame} />}
-      {screen === 'lobby' && <Lobby onBack={() => setScreen('home')} onStart={launchGame} />}
+      {screen === 'lobby' && (
+        <Lobby
+          onBack={() => setScreen('home')}
+          onStart={launchGame}
+          phaseDurations={phaseDurations}
+          onDurationChange={updatePhaseDuration}
+          warningEnabled={phaseWarningEnabled}
+          onWarningEnabledChange={setPhaseWarningEnabled}
+        />
+      )}
       {screen === 'role' && game && <RoleReveal game={game} onContinue={toFirstNight} />}
       {screen === 'night' && game && (
         <Night
@@ -501,6 +581,8 @@ export default function App() {
           setSelected={setSelected}
           onResolve={finishNight}
           onTimeout={finishNightFromTimer}
+          durationSeconds={phaseDurations.night}
+          onUrgentTick={playPhaseWarning}
           onSendChat={sendHumanChat}
           onMarkChatRead={markChatRead}
         />
@@ -529,6 +611,8 @@ export default function App() {
           removeNote={removeNote}
           onVote={toVoting}
           onTimeout={toVoting}
+          durationSeconds={phaseDurations.discussion}
+          onUrgentTick={playPhaseWarning}
           onOpenClaimComposer={openClaimComposer}
           onWithdrawClaim={removeClaim}
           deduction={deduction}
@@ -572,6 +656,8 @@ export default function App() {
           setSelected={setSelected}
           onResolve={finishVote}
           onTimeout={finishVoteFromTimer}
+          durationSeconds={phaseDurations.voting}
+          onUrgentTick={playPhaseWarning}
         />
       )}
       {screen === 'vote-result' && game && <VoteResult game={game} onContinue={toNextNight} />}
@@ -609,7 +695,21 @@ function Menu({ icon, title, sub, onClick, primary }: { icon: string; title: str
   return <button className={'menu-btn ' + (primary ? 'primary' : '')} onClick={onClick}><span>{icon}</span><div><b>{title}</b><small>{sub}</small></div><em>›</em></button>
 }
 
-function Lobby({ onBack, onStart }: { onBack: () => void; onStart: () => void }) {
+function Lobby({
+  onBack,
+  onStart,
+  phaseDurations,
+  onDurationChange,
+  warningEnabled,
+  onWarningEnabledChange,
+}: {
+  onBack: () => void
+  onStart: () => void
+  phaseDurations: PhaseDurations
+  onDurationChange: (key: PhaseDurationKey, direction: -1 | 1) => void
+  warningEnabled: boolean
+  onWarningEnabledChange: (enabled: boolean) => void
+}) {
   return (
     <main className="lobby">
       <aside className="lobby-left"><Brand /><button className="back" onClick={onBack}>← Ana menü</button><Lore /></aside>
@@ -634,10 +734,15 @@ function Lobby({ onBack, onStart }: { onBack: () => void; onStart: () => void })
             <div className="tabs"><button className="active">Oyun Ayarları</button><button>Rol Dağılımı</button></div>
             <div className="mode"><span>🌒</span><div><small>OYUN MODU</small><h2>Klasik Paket</h2><p>Oyuncu sayısına göre otomatik ve dengeli.</p></div></div>
             <Setting icon="◆" label="Harita" value="Köy Meydanı" />
-            <Setting icon="☀" label="Tartışma Süresi" value={PHASE_DURATIONS_SECONDS.discussion + ' saniye'} />
-            <Setting icon="☾" label="Gece Süresi" value={PHASE_DURATIONS_SECONDS.night + ' saniye'} />
-            <Setting icon="🗳" label="Oylama Süresi" value={PHASE_DURATIONS_SECONDS.voting + ' saniye'} />
-            <Setting icon="☵" label="Tartışma" value="Var" />
+            <DurationSetting icon="☀" label="Tartışma Süresi" value={phaseDurations.discussion} onChange={(direction) => onDurationChange('discussion', direction)} />
+            <DurationSetting icon="☾" label="Gece Süresi" value={phaseDurations.night} onChange={(direction) => onDurationChange('night', direction)} />
+            <DurationSetting icon="🗳" label="Oylama Süresi" value={phaseDurations.voting} onChange={(direction) => onDurationChange('voting', direction)} />
+            <ToggleSetting
+              icon="⌛"
+              label="Son 10 sn uyarısı"
+              enabled={warningEnabled}
+              onChange={onWarningEnabledChange}
+            />
             <div className="roles">
               <h3>Rol Dağılımı ({players.length} Oyuncu)</h3>
               <div>
@@ -657,7 +762,56 @@ function Lobby({ onBack, onStart }: { onBack: () => void; onStart: () => void })
 }
 
 function Setting({ icon, label, value }: { icon: string; label: string; value: string }) {
-  return <div className="setting"><span>{icon}</span><b>{label}</b><button>‹</button><strong>{value}</strong><button>›</button></div>
+  return <div className="setting"><span>{icon}</span><b>{label}</b><button disabled>‹</button><strong>{value}</strong><button disabled>›</button></div>
+}
+
+function DurationSetting({
+  icon,
+  label,
+  value,
+  onChange,
+}: {
+  icon: string
+  label: string
+  value: number
+  onChange: (direction: -1 | 1) => void
+}) {
+  return (
+    <div className="setting duration-setting">
+      <span>{icon}</span>
+      <b>{label}</b>
+      <button aria-label={label + ' azalt'} onClick={() => onChange(-1)}>‹</button>
+      <strong>{value} sn</strong>
+      <button aria-label={label + ' artır'} onClick={() => onChange(1)}>›</button>
+    </div>
+  )
+}
+
+function ToggleSetting({
+  icon,
+  label,
+  enabled,
+  onChange,
+}: {
+  icon: string
+  label: string
+  enabled: boolean
+  onChange: (enabled: boolean) => void
+}) {
+  return (
+    <div className="setting toggle-setting">
+      <span>{icon}</span>
+      <b>{label}</b>
+      <button
+        className={'setting-toggle ' + (enabled ? 'on' : '')}
+        aria-pressed={enabled}
+        onClick={() => onChange(!enabled)}
+      >
+        <i />
+        <strong>{enabled ? 'Açık' : 'Kapalı'}</strong>
+      </button>
+    </div>
+  )
 }
 
 function Role({ icon, name, n }: { icon: string; name: string; n: string }) {
@@ -701,6 +855,8 @@ function Day({
   removeNote,
   onVote,
   onTimeout,
+  durationSeconds,
+  onUrgentTick,
   onOpenClaimComposer,
   onWithdrawClaim,
   deduction,
@@ -724,6 +880,8 @@ function Day({
   removeNote: (index: number) => void
   onVote: () => void
   onTimeout: () => void
+  durationSeconds: number
+  onUrgentTick: (seconds: number) => void
   onOpenClaimComposer: () => void
   onWithdrawClaim: (claimId: number) => void
   deduction: PrivateDeductionState
@@ -739,9 +897,10 @@ function Day({
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
   const mobileLayout = useMediaQuery('(max-width: 900px)')
   const discussionSeconds = usePhaseCountdown(
-    PHASE_DURATIONS_SECONDS.discussion,
+    durationSeconds,
     `discussion-${game.round}`,
     onTimeout,
+    onUrgentTick,
   )
   const [chatChannel, setChatChannel] = useState<ChatChannel>(() =>
     getChatAccess(game, HUMAN_ID).writable.includes('ghost') ? 'ghost' : 'village',
@@ -1877,6 +2036,8 @@ function Night({
   setSelected,
   onResolve,
   onTimeout,
+  durationSeconds,
+  onUrgentTick,
   onSendChat,
   onMarkChatRead,
 }: {
@@ -1885,13 +2046,16 @@ function Night({
   setSelected: (id: number | null) => void
   onResolve: () => void
   onTimeout: () => void
+  durationSeconds: number
+  onUrgentTick: (seconds: number) => void
   onSendChat: (channel: ChatChannel, text: string) => void
   onMarkChatRead: (channel: ChatChannel, messageId: number) => void
 }) {
   const nightSeconds = usePhaseCountdown(
-    PHASE_DURATIONS_SECONDS.night,
+    durationSeconds,
     `night-${game.round}`,
     onTimeout,
+    onUrgentTick,
   )
   const view = getPrivatePlayerView(game, HUMAN_ID)
   const visual = roleVisuals[view.selfRole]
@@ -2088,17 +2252,22 @@ function Voting({
   setSelected,
   onResolve,
   onTimeout,
+  durationSeconds,
+  onUrgentTick,
 }: {
   game: GameState
   selected: number | null
   setSelected: (id: number | null) => void
   onResolve: () => void
   onTimeout: () => void
+  durationSeconds: number
+  onUrgentTick: (seconds: number) => void
 }) {
   const votingSeconds = usePhaseCountdown(
-    PHASE_DURATIONS_SECONDS.voting,
+    durationSeconds,
     `voting-${game.round}`,
     onTimeout,
+    onUrgentTick,
   )
   const self = game.players.find((player) => player.id === HUMAN_ID)
   const targets = game.players.filter((player) => player.alive && player.id !== HUMAN_ID)
