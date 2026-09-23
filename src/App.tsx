@@ -1,11 +1,16 @@
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import {
   beginDiscussion,
   beginNight,
   beginVoting,
   createGame,
+  getActiveClaims,
   getPrivatePlayerView,
   groupRoleClaims,
+  recordAccusationClaim,
+  recordActionClaim,
+  recordDefenseClaim,
+  recordInformationClaim,
   recordRoleClaim,
   submitNightAction,
   submitVote,
@@ -14,7 +19,7 @@ import {
 } from './game/engine'
 import { completeNightWithBots, completeVoteWithBots } from './game/demo'
 import { ROLE_DEFINITIONS, buildRolePack, countRoles } from './game/roles'
-import type { GameState, RoleId } from './game/types'
+import type { ActionClaim, ClaimKind, GameState, RoleId, StructuredClaim } from './game/types'
 
 type Screen =
   | 'home'
@@ -125,8 +130,13 @@ export default function App() {
   const [notes, setNotes] = useState(['Ali ve Ayşe aynı rolü iddia ediyor.', 'Burak’ın tavırları gergin.'])
   const [note, setNote] = useState('')
   const [claimComposerOpen, setClaimComposerOpen] = useState(false)
+  const [claimKind, setClaimKind] = useState<ClaimKind>('role')
   const [claimantId, setClaimantId] = useState(HUMAN_ID)
+  const [claimTargetId, setClaimTargetId] = useState(2)
   const [claimRole, setClaimRole] = useState<RoleId>('seer')
+  const [claimStatement, setClaimStatement] = useState('')
+  const [claimAction, setClaimAction] = useState<ActionClaim['action']>('investigated')
+  const [claimSuspectedRole, setClaimSuspectedRole] = useState<RoleId | ''>('vampire')
   const [claimQuote, setClaimQuote] = useState('')
 
   const addNote = () => {
@@ -136,19 +146,63 @@ export default function App() {
     setNote('')
   }
 
-  const addRoleClaim = () => {
+  const openClaimComposer = () => {
     if (!game) return
+    const living = game.players.filter((player) => player.alive)
+    if (!living.some((player) => player.id === claimantId) && living[0]) {
+      setClaimantId(living[0].id)
+    }
+    if (!game.players.some((player) => player.id === claimTargetId) && game.players[0]) {
+      setClaimTargetId(game.players[0].id)
+    }
+    setClaimComposerOpen(true)
+  }
+
+  const addStructuredClaim = () => {
+    if (!game) return
+
     try {
-      const next = recordRoleClaim(game, claimantId, claimRole, claimQuote)
+      let next = game
+      if (claimKind === 'role') {
+        next = recordRoleClaim(game, claimantId, claimRole, claimQuote)
+      } else if (claimKind === 'information') {
+        next = recordInformationClaim(
+          game,
+          claimantId,
+          claimTargetId,
+          claimStatement,
+          claimQuote,
+        )
+      } else if (claimKind === 'action') {
+        next = recordActionClaim(
+          game,
+          claimantId,
+          claimTargetId,
+          claimAction,
+          claimQuote,
+        )
+      } else if (claimKind === 'accusation') {
+        next = recordAccusationClaim(
+          game,
+          claimantId,
+          claimTargetId,
+          claimSuspectedRole || undefined,
+          claimQuote,
+        )
+      } else {
+        next = recordDefenseClaim(game, claimantId, claimTargetId, claimQuote)
+      }
+
       setGame(next)
+      setClaimStatement('')
       setClaimQuote('')
       setClaimComposerOpen(false)
     } catch {
-      // UI yalnızca yaşayan oyuncuları listeler; motor yine de güvenlik sınırını korur.
+      // Motor geçersiz veya eksik yapılandırılmış kayıtları reddeder.
     }
   }
 
-  const removeRoleClaim = (claimId: number) => {
+  const removeClaim = (claimId: number) => {
     if (!game) return
     setGame(withdrawClaim(game, claimId))
   }
@@ -244,21 +298,31 @@ export default function App() {
           setNote={setNote}
           addNote={addNote}
           onVote={toVoting}
-          onOpenClaimComposer={() => setClaimComposerOpen(true)}
-          onWithdrawClaim={removeRoleClaim}
+          onOpenClaimComposer={openClaimComposer}
+          onWithdrawClaim={removeClaim}
         />
       )}
       {claimComposerOpen && game && (
         <ClaimComposer
           game={game}
+          kind={claimKind}
           claimantId={claimantId}
+          targetId={claimTargetId}
           role={claimRole}
+          statement={claimStatement}
+          action={claimAction}
+          suspectedRole={claimSuspectedRole}
           quote={claimQuote}
+          setKind={setClaimKind}
           setClaimantId={setClaimantId}
+          setTargetId={setClaimTargetId}
           setRole={setClaimRole}
+          setStatement={setClaimStatement}
+          setAction={setClaimAction}
+          setSuspectedRole={setClaimSuspectedRole}
           setQuote={setClaimQuote}
           onClose={() => setClaimComposerOpen(false)}
-          onSave={addRoleClaim}
+          onSave={addStructuredClaim}
         />
       )}
       {screen === 'vote' && game && (
@@ -463,6 +527,33 @@ function Day({
   )
 }
 
+function claimTypeMeta(claim: StructuredClaim): { icon: string; label: string; detail: string } {
+  if (claim.kind === 'information') {
+    return { icon: '◉', label: 'Bilgi İddiası', detail: claim.statement }
+  }
+  if (claim.kind === 'action') {
+    const labels: Record<ActionClaim['action'], string> = {
+      protected: 'koruduğunu söylüyor',
+      investigated: 'araştırdığını söylüyor',
+      visited: 'ziyaret ettiğini söylüyor',
+    }
+    return { icon: '◇', label: 'Aksiyon İddiası', detail: labels[claim.action] }
+  }
+  if (claim.kind === 'accusation') {
+    return {
+      icon: '⚑',
+      label: 'Suçlama',
+      detail: claim.suspectedRole
+        ? `${ROLE_DEFINITIONS[claim.suspectedRole].name} olduğunu düşünüyor`
+        : 'şüpheli olduğunu söylüyor',
+    }
+  }
+  if (claim.kind === 'defense') {
+    return { icon: '♢', label: 'Savunma', detail: 'güvendiğini / savunduğunu söylüyor' }
+  }
+  return { icon: roleVisuals[claim.role].icon, label: 'Rol İddiası', detail: ROLE_DEFINITIONS[claim.role].name }
+}
+
 function Claims({
   game,
   onOpenComposer,
@@ -473,22 +564,29 @@ function Claims({
   onWithdrawClaim: (claimId: number) => void
 }) {
   const groups = groupRoleClaims(game)
+  const socialClaims = getActiveClaims(game)
+    .filter((claim) => claim.kind !== 'role')
+    .sort((a, b) => b.id - a.id)
 
   return (
     <div className="claim-board">
       <div className="claim-board-head">
         <div>
-          <b>Rol İddiaları</b>
-          <small>Sistem sözleri düzenler; yorumlamaz.</small>
+          <b>İddia Defteri</b>
+          <small>Sözleri düzenler; doğruyu seçmez.</small>
         </div>
-        <button onClick={onOpenComposer}>＋ İddia Kaydet</button>
+        <button onClick={onOpenComposer}>＋ Kayıt Ekle</button>
+      </div>
+
+      <div className="claim-section-title">
+        <b>Rol İddiaları</b>
+        <small>Aynı rolü sahiplenen oyuncular birlikte görünür.</small>
       </div>
 
       {groups.length === 0 ? (
-        <div className="claim-empty">
+        <div className="claim-empty compact">
           <span>◇</span>
-          <b>Henüz yapılandırılmış rol iddiası yok.</b>
-          <small>Köy meclisinde duyduğun bir rol iddiasını buraya kaydedebilirsin.</small>
+          <b>Henüz rol iddiası yok.</b>
         </div>
       ) : (
         <div className="claim-groups">
@@ -499,7 +597,10 @@ function Claims({
                 <header>
                   <div>
                     <span>{roleVisuals[group.role].icon}</span>
-                    <div><b>{definition.name} İddiaları</b><small>{group.claims.length > 1 ? '◇ Birden fazla iddia' : 'Tek aktif iddia'}</small></div>
+                    <div>
+                      <b>{definition.name} İddiaları</b>
+                      <small>{group.claims.length > 1 ? '◇ Birden fazla iddia' : 'Tek aktif iddia'}</small>
+                    </div>
                   </div>
                 </header>
                 <div className="claim-group-list">
@@ -523,64 +624,183 @@ function Claims({
           })}
         </div>
       )}
+
+      <div className="claim-section-title claim-stream-title">
+        <b>Söz Akışı</b>
+        <small>Bilgi, aksiyon, suçlama ve savunmalar.</small>
+      </div>
+
+      {socialClaims.length === 0 ? (
+        <div className="claim-empty compact">
+          <span>⌁</span>
+          <b>Henüz başka yapılandırılmış kayıt yok.</b>
+        </div>
+      ) : (
+        <div className="claim-stream">
+          {socialClaims.map((claim) => {
+            const claimant = players.find((player) => player.id === claim.claimantId)
+            const targetId = 'targetId' in claim ? claim.targetId : null
+            const target = targetId ? players.find((player) => player.id === targetId) : null
+            const meta = claimTypeMeta(claim)
+
+            return (
+              <article className={'social-claim social-claim-' + claim.kind} key={claim.id}>
+                <div className="social-claim-icon">{meta.icon}</div>
+                <div className="social-claim-body">
+                  <div className="social-claim-top">
+                    <b>{claimant?.name ?? 'Oyuncu'}</b>
+                    <small>{claim.round}. Gün · {meta.label}</small>
+                  </div>
+                  {target && (
+                    <div className="social-claim-target">
+                      <span>→</span>
+                      <strong>{target.name}</strong>
+                      <em>{meta.detail}</em>
+                    </div>
+                  )}
+                  {claim.kind === 'information' && !target && <p>{claim.statement}</p>}
+                  {claim.quote && <blockquote>“{claim.quote}”</blockquote>}
+                </div>
+                <button title="Kaydı geri çek" onClick={() => onWithdrawClaim(claim.id)}>↶</button>
+              </article>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
 
 function ClaimComposer({
   game,
+  kind,
   claimantId,
+  targetId,
   role,
+  statement,
+  action,
+  suspectedRole,
   quote,
+  setKind,
   setClaimantId,
+  setTargetId,
   setRole,
+  setStatement,
+  setAction,
+  setSuspectedRole,
   setQuote,
   onClose,
   onSave,
 }: {
   game: GameState
+  kind: ClaimKind
   claimantId: number
+  targetId: number
   role: RoleId
+  statement: string
+  action: ActionClaim['action']
+  suspectedRole: RoleId | ''
   quote: string
+  setKind: (kind: ClaimKind) => void
   setClaimantId: (id: number) => void
+  setTargetId: (id: number) => void
   setRole: (role: RoleId) => void
+  setStatement: (statement: string) => void
+  setAction: (action: ActionClaim['action']) => void
+  setSuspectedRole: (role: RoleId | '') => void
   setQuote: (quote: string) => void
   onClose: () => void
   onSave: () => void
 }) {
   const living = game.players.filter((player) => player.alive)
   const roles = Object.keys(ROLE_DEFINITIONS) as RoleId[]
+  const kindOptions: Array<{ id: ClaimKind; icon: string; label: string }> = [
+    { id: 'role', icon: '♙', label: 'Rol' },
+    { id: 'information', icon: '◉', label: 'Bilgi' },
+    { id: 'action', icon: '◇', label: 'Aksiyon' },
+    { id: 'accusation', icon: '⚑', label: 'Suçlama' },
+    { id: 'defense', icon: '♢', label: 'Savunma' },
+  ]
+  const needsTarget = kind !== 'role'
+  const canSave = kind !== 'information' || statement.trim().length > 0
 
   return (
     <div className="claim-modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="claim-modal panel" role="dialog" aria-modal="true" aria-label="Rol iddiası kaydet" onMouseDown={(event) => event.stopPropagation()}>
+      <section className="claim-modal panel" role="dialog" aria-modal="true" aria-label="Yapılandırılmış kayıt ekle" onMouseDown={(event) => event.stopPropagation()}>
         <button className="claim-modal-close" onClick={onClose}>×</button>
-        <small>YAPILANDIRILMIŞ İDDİA</small>
-        <h2>Rol İddiası Kaydet</h2>
-        <p>Kimin ne söylediğini kaydet. Uygulama iddianın doğru veya yanlış olduğuna karar vermez.</p>
+        <small>İDDİA DEFTERİ</small>
+        <h2>Kayıt Ekle</h2>
+        <p>Söyleneni kaydet. Uygulama bu kaydın doğru veya yanlış olduğuna karar vermez.</p>
+
+        <div className="claim-kind-picker">
+          {kindOptions.map((option) => (
+            <button key={option.id} className={kind === option.id ? 'active' : ''} onClick={() => setKind(option.id)}>
+              <span>{option.icon}</span><b>{option.label}</b>
+            </button>
+          ))}
+        </div>
 
         <label>
-          <span>İddiayı yapan</span>
+          <span>Söyleyen oyuncu</span>
           <select value={claimantId} onChange={(event) => setClaimantId(Number(event.target.value))}>
             {living.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}
           </select>
         </label>
 
-        <label>
-          <span>İddia edilen rol</span>
-          <select value={role} onChange={(event) => setRole(event.target.value as RoleId)}>
-            {roles.map((roleId) => <option key={roleId} value={roleId}>{ROLE_DEFINITIONS[roleId].name}</option>)}
-          </select>
-        </label>
+        {needsTarget && (
+          <label>
+            <span>Hedef / hakkında konuşulan oyuncu</span>
+            <select value={targetId} onChange={(event) => setTargetId(Number(event.target.value))}>
+              {game.players.map((player) => <option key={player.id} value={player.id}>{player.name}{player.alive ? '' : ' · ölü'}</option>)}
+            </select>
+          </label>
+        )}
+
+        {kind === 'role' && (
+          <label>
+            <span>İddia edilen rol</span>
+            <select value={role} onChange={(event) => setRole(event.target.value as RoleId)}>
+              {roles.map((roleId) => <option key={roleId} value={roleId}>{ROLE_DEFINITIONS[roleId].name}</option>)}
+            </select>
+          </label>
+        )}
+
+        {kind === 'information' && (
+          <label>
+            <span>Söylediği bilgi</span>
+            <textarea value={statement} onChange={(event) => setStatement(event.target.value)} placeholder="Örn. “Masum olduğunu gördüm.” veya “Vampir çıktı.”" maxLength={140} />
+          </label>
+        )}
+
+        {kind === 'action' && (
+          <label>
+            <span>Yaptığını söylediği aksiyon</span>
+            <select value={action} onChange={(event) => setAction(event.target.value as ActionClaim['action'])}>
+              <option value="investigated">Araştırdım</option>
+              <option value="protected">Korudum</option>
+              <option value="visited">Ziyaret ettim</option>
+            </select>
+          </label>
+        )}
+
+        {kind === 'accusation' && (
+          <label>
+            <span>Şüphelendiği rol <em>isteğe bağlı</em></span>
+            <select value={suspectedRole} onChange={(event) => setSuspectedRole(event.target.value as RoleId | '')}>
+              <option value="">Rol belirtmedi</option>
+              {roles.map((roleId) => <option key={roleId} value={roleId}>{ROLE_DEFINITIONS[roleId].name}</option>)}
+            </select>
+          </label>
+        )}
 
         <label>
-          <span>Söz / not <em>isteğe bağlı</em></span>
-          <textarea value={quote} onChange={(event) => setQuote(event.target.value)} placeholder="Örn. “Ben Kâhinim, dün gece Can'ı araştırdım.”" maxLength={180} />
+          <span>Söylediği cümle / not <em>isteğe bağlı</em></span>
+          <textarea value={quote} onChange={(event) => setQuote(event.target.value)} placeholder="Örn. “Dün gece Can'ı araştırdım, masum çıktı.”" maxLength={180} />
         </label>
 
         <div className="claim-modal-actions">
           <button className="back" onClick={onClose}>Vazgeç</button>
-          <button className="start" onClick={onSave}>İddiayı Kaydet <b>›</b></button>
+          <button className="start" disabled={!canSave} onClick={onSave}>Kaydı Ekle <b>›</b></button>
         </div>
       </section>
     </div>
