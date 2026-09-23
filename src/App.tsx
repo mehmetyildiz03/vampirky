@@ -683,14 +683,6 @@ function Day({
     0,
   )
 
-  const markChatRead = (channel: ChatChannel, messageId: number) => {
-    setChatLastRead((current) =>
-      messageId <= current[channel]
-        ? current
-        : { ...current, [channel]: messageId },
-    )
-  }
-
   const openSourceMessage = (messageId: number) => {
     const source = game.chatMessages.find((message) => message.id === messageId)
     if (!source || source.channel !== 'village') return
