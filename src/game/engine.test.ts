@@ -6,7 +6,12 @@ import {
   createGame,
   groupRoleClaims,
   withdrawClaim,
+  getActiveClaims,
   getPrivatePlayerView,
+  recordAccusationClaim,
+  recordActionClaim,
+  recordDefenseClaim,
+  recordInformationClaim,
   recordRoleClaim,
   resolveNight,
   resolveVote,
@@ -161,5 +166,64 @@ describe('claim system', () => {
     expect(groupRoleClaims(game)[0].claims.map((claim) => claim.claimantId)).toEqual([2])
     expect(game.claims).toHaveLength(2)
     expect(game.claims.find((claim) => claim.id === 1)?.status).toBe('withdrawn')
+  })
+})
+
+
+describe('structured social claims', () => {
+  it('records information, action, accusation and defense as separate public claim types', () => {
+    let game = createGame(seeds(9))
+    game = recordInformationClaim(game, 1, 2, 'Masum olduğunu söylüyor.', 'Ayşe masum çıktı.')
+    game = recordActionClaim(game, 3, 2, 'protected', 'Ayşe’yi korudum.')
+    game = recordAccusationClaim(game, 4, 5, 'vampire', 'Burak bana göre Vampir.')
+    game = recordDefenseClaim(game, 6, 2, 'Ayşe’ye güveniyorum.')
+
+    expect(getActiveClaims(game).map((claim) => claim.kind)).toEqual([
+      'information',
+      'action',
+      'accusation',
+      'defense',
+    ])
+  })
+
+  it('does not validate a public claim against secret role truth', () => {
+    let game = createGame(seeds(9))
+    const villager = game.players.find((player) => player.secretRole === 'villager')!
+    const target = game.players.find((player) => player.id !== villager.id)!
+
+    game = recordInformationClaim(
+      game,
+      villager.id,
+      target.id,
+      'Vampir olduğunu gördüm.',
+    )
+
+    expect(getActiveClaims(game)).toHaveLength(1)
+    expect(getActiveClaims(game)[0].kind).toBe('information')
+  })
+
+  it('keeps withdrawn non-role claims in history but out of active claims', () => {
+    let game = createGame(seeds(9))
+    game = recordAccusationClaim(game, 1, 2, 'vampire')
+    const claimId = game.claims[0].id
+    game = withdrawClaim(game, claimId)
+
+    expect(getActiveClaims(game)).toEqual([])
+    expect(game.claims[0].status).toBe('withdrawn')
+  })
+
+  it('rejects new claims from dead players', () => {
+    let game = beginNight(createGame(seeds(9)))
+    const vampires = game.players.filter((player) => player.secretRole === 'vampire')
+    const target = game.players.find((player) => player.secretRole !== 'vampire')!
+
+    for (const vampire of vampires) {
+      game = submitNightAction(game, vampire.id, target.id)
+    }
+    game = resolveNight(game)
+
+    expect(() =>
+      recordDefenseClaim(game, target.id, vampires[0].id, 'Ona güveniyorum.'),
+    ).toThrow('Dead players cannot create new claims.')
   })
 })

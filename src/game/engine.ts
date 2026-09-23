@@ -10,6 +10,10 @@ import type {
   PlayerSeed,
   PrivatePlayerView,
   PublicPlayer,
+  ActionClaim,
+  AccusationClaim,
+  DefenseClaim,
+  InformationClaim,
   RoleClaim,
   RoleClaimGroup,
   RoleId,
@@ -313,8 +317,7 @@ export function recordRoleClaim(
   role: RoleId,
   quote?: string,
 ): GameState {
-  const claimant = findPlayer(state, claimantId)
-  if (!claimant.alive) throw new Error('Dead players cannot create new claims.')
+  assertClaimantCanSpeak(state, claimantId)
 
   const next = cloneState(state)
   const claim: RoleClaim = {
@@ -330,6 +333,113 @@ export function recordRoleClaim(
   next.claims.push(claim)
   next.nextClaimId += 1
   return next
+}
+
+function assertClaimantCanSpeak(state: GameState, claimantId: number): GamePlayer {
+  const claimant = findPlayer(state, claimantId)
+  if (!claimant.alive) throw new Error('Dead players cannot create new claims.')
+  return claimant
+}
+
+function assertClaimTargetExists(state: GameState, targetId: number): GamePlayer {
+  return findPlayer(state, targetId)
+}
+
+function appendStructuredClaim<T extends StructuredClaim>(
+  state: GameState,
+  claim: Omit<T, 'id' | 'round' | 'status'>,
+): GameState {
+  const next = cloneState(state)
+  next.claims.push({
+    ...claim,
+    id: next.nextClaimId,
+    round: next.round,
+    status: 'active',
+  } as T)
+  next.nextClaimId += 1
+  return next
+}
+
+export function recordInformationClaim(
+  state: GameState,
+  claimantId: number,
+  targetId: number,
+  statement: string,
+  quote?: string,
+): GameState {
+  assertClaimantCanSpeak(state, claimantId)
+  assertClaimTargetExists(state, targetId)
+  const text = statement.trim()
+  if (!text) throw new Error('Information claim statement cannot be empty.')
+
+  return appendStructuredClaim<InformationClaim>(state, {
+    claimantId,
+    kind: 'information',
+    targetId,
+    statement: text,
+    quote: quote?.trim() || undefined,
+  })
+}
+
+export function recordActionClaim(
+  state: GameState,
+  claimantId: number,
+  targetId: number,
+  action: ActionClaim['action'],
+  quote?: string,
+): GameState {
+  assertClaimantCanSpeak(state, claimantId)
+  assertClaimTargetExists(state, targetId)
+
+  return appendStructuredClaim<ActionClaim>(state, {
+    claimantId,
+    kind: 'action',
+    targetId,
+    action,
+    quote: quote?.trim() || undefined,
+  })
+}
+
+export function recordAccusationClaim(
+  state: GameState,
+  claimantId: number,
+  targetId: number,
+  suspectedRole?: RoleId,
+  quote?: string,
+): GameState {
+  assertClaimantCanSpeak(state, claimantId)
+  assertClaimTargetExists(state, targetId)
+
+  return appendStructuredClaim<AccusationClaim>(state, {
+    claimantId,
+    kind: 'accusation',
+    targetId,
+    suspectedRole,
+    quote: quote?.trim() || undefined,
+  })
+}
+
+export function recordDefenseClaim(
+  state: GameState,
+  claimantId: number,
+  targetId: number,
+  quote?: string,
+): GameState {
+  assertClaimantCanSpeak(state, claimantId)
+  assertClaimTargetExists(state, targetId)
+
+  return appendStructuredClaim<DefenseClaim>(state, {
+    claimantId,
+    kind: 'defense',
+    targetId,
+    quote: quote?.trim() || undefined,
+  })
+}
+
+export function getActiveClaims(state: GameState): StructuredClaim[] {
+  return state.claims
+    .filter((claim) => claim.status === 'active')
+    .map((claim) => ({ ...claim }))
 }
 
 export function groupRoleClaims(state: GameState): RoleClaimGroup[] {
