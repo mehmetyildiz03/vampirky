@@ -137,6 +137,22 @@ function Lore() {
   return <div className="lore"><span>Gözlemle</span><span>Sorgula</span><span>Çelişkileri Bul</span><span>Doğruyu Keşfet</span></div>
 }
 
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia(query).matches : false,
+  )
+
+  useEffect(() => {
+    const media = window.matchMedia(query)
+    const update = () => setMatches(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [query])
+
+  return matches
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home')
   const [game, setGame] = useState<GameState | null>(null)
@@ -649,6 +665,7 @@ function Day({
 }) {
   const [panelMode, setPanelMode] = useState<'chat' | 'deduction'>('chat')
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
+  const mobileLayout = useMediaQuery('(max-width: 900px)')
   const [chatChannel, setChatChannel] = useState<ChatChannel>(() =>
     getChatAccess(game, HUMAN_ID).writable.includes('ghost') ? 'ghost' : 'village',
   )
@@ -794,6 +811,7 @@ function Day({
             onMarkRead={onMarkChatRead}
             focusMessageId={chatFocusMessageId}
             onFocusHandled={() => setChatFocusMessageId(null)}
+            visible={!mobileLayout || mobilePanelOpen}
           />
         ) : (
           <>
@@ -889,6 +907,7 @@ function ChatPanel({
   onMarkRead,
   focusMessageId = null,
   onFocusHandled,
+  visible = true,
   compact = false,
 }: {
   game: GameState
@@ -901,6 +920,7 @@ function ChatPanel({
   onMarkRead?: (channel: ChatChannel, messageId: number) => void
   focusMessageId?: number | null
   onFocusHandled?: () => void
+  visible?: boolean
   compact?: boolean
 }) {
   const access = getChatAccess(game, viewerId)
@@ -932,15 +952,15 @@ function ChatPanel({
   const lastMessageId = messages.at(-1)?.id ?? 0
 
   useEffect(() => {
-    if (!feedRef.current || focusMessageId !== null) return
+    if (!visible || !feedRef.current || focusMessageId !== null) return
     if (stickToBottomRef.current) {
       feedRef.current.scrollTop = feedRef.current.scrollHeight
       if (lastMessageId > 0) onMarkRead?.(selectedChannel, lastMessageId)
     }
-  }, [lastMessageId, selectedChannel, focusMessageId, onMarkRead])
+  }, [lastMessageId, selectedChannel, focusMessageId, onMarkRead, visible])
 
   useEffect(() => {
-    if (focusMessageId === null || !feedRef.current) return
+    if (!visible || focusMessageId === null || !feedRef.current) return
     const target = feedRef.current.querySelector<HTMLElement>(
       `[data-message-id="${focusMessageId}"]`,
     )
@@ -950,7 +970,7 @@ function ChatPanel({
     setHighlightedMessageId(focusMessageId)
     onMarkRead?.(selectedChannel, focusMessageId)
     onFocusHandled?.()
-  }, [focusMessageId, selectedChannel, onFocusHandled, onMarkRead])
+  }, [focusMessageId, selectedChannel, onFocusHandled, onMarkRead, visible])
 
   useEffect(() => {
     if (highlightedMessageId === null) return
@@ -1798,6 +1818,13 @@ function Night({
   const nightChatAvailable = nightChatAccess.writable.some(
     (channel) => channel === 'vampire' || channel === 'ghost',
   )
+  const mobileNightActionLabel = !self?.alive
+    ? 'Hayalet Olarak İzle'
+    : action
+      ? picked
+        ? `${picked.name} · Onayla`
+        : 'Bir hedef seç'
+      : 'Geceyi Bitir'
 
   return (
     <main className="game night-game">
@@ -1826,7 +1853,21 @@ function Night({
           })}
           <div className="bonfire low"><i /><b /></div>
         </div>
-        <button className="vote blue">{action ? 'Karanlıkta hedefini seç.' : 'Bu gece yalnızca gözlemliyorsun.'} <b>›</b></button>
+        <div className="vote blue night-guidance">
+          {self?.alive
+            ? action
+              ? 'Karanlıkta hedefini seç.'
+              : 'Bu gece özel bir aksiyonun yok.'
+            : 'Hayalet olarak geceyi izliyorsun.'}
+        </div>
+        <button
+          className="night-mobile-confirm"
+          disabled={!canAct}
+          onClick={onResolve}
+        >
+          <span>{visual.icon}</span>
+          <b>{mobileNightActionLabel}</b>
+        </button>
       </section>
       <aside className="panel role-panel">
         <blockquote>“Herkes uyur... Ama gerçekler asla.”</blockquote>
@@ -1970,7 +2011,7 @@ function Voting({
         <div className="vote-grid">
           {targets.map((target) => {
             const visual = players.find((player) => player.id === target.id)!
-            return <button key={target.id} className={selected === target.id ? 'picked' : ''} onClick={() => self?.alive && setSelected(target.id)}><span className="avatar" style={{ '--accent': visual.accent } as CSSProperties}>{visual.initial}</span><b>{target.name}</b><em>{selected === target.id ? '✓' : '○'}</em></button>
+            return <button key={target.id} disabled={!self?.alive} className={selected === target.id ? 'picked' : ''} onClick={() => self?.alive && setSelected(target.id)}><span className="avatar" style={{ '--accent': visual.accent } as CSSProperties}>{visual.initial}</span><b>{target.name}</b><em>{selected === target.id ? '✓' : '○'}</em></button>
           })}
         </div>
         <button className="start" disabled={Boolean(self?.alive) && selected === null} onClick={onResolve}>{self?.alive ? 'Oyumu Kilitle' : 'Oylama Sonucunu Gör'} <b>›</b></button>

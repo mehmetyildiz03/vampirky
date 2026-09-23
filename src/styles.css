@@ -84,3 +84,22 @@
   .inspector-timeline{max-height:82dvh!important}
   .inspector-trust{grid-template-columns:repeat(3,1fr)!important}.inspector-trust button{font-size:10px;padding:8px 4px!important}
 }
+
+/* P2.11 — mobile flow audit remediation */
+.night-mobile-confirm{display:none}.night-guidance{cursor:default;pointer-events:none;place-items:center;text-align:center}.mobile-sheet-backdrop{overscroll-behavior:contain;touch-action:none}
+@media(max-width:900px){
+  .phase-night .game{padding-bottom:calc(88px + env(safe-area-inset-bottom))}
+  .phase-night .role-panel>.seer-btn{display:none}
+  .night-mobile-confirm{position:fixed;z-index:66;left:10px;right:10px;bottom:calc(9px + env(safe-area-inset-bottom));min-height:58px;display:grid;grid-template-columns:34px 1fr;align-items:center;gap:8px;padding:8px 14px;border:1px solid #458eba;background:linear-gradient(#194f75,#0a2c49);color:#e8f5fb;box-shadow:0 12px 30px #000d,inset 0 0 0 1px #071827;font-size:14px;font-weight:700}
+  .night-mobile-confirm>span{font-size:22px}.night-mobile-confirm>b{text-align:left}.night-mobile-confirm:disabled{opacity:.48;filter:grayscale(.6);cursor:not-allowed}
+  .phase-night .night-guidance{bottom:78px;left:8%;width:84%;min-height:48px;font-size:13px;z-index:8}
+  .phase-night .council{padding-bottom:145px}
+  .phase-night .role-panel{margin-bottom:8px}
+  .day-side-panel.mobile-open .chat-panel{visibility:visible}
+}
+@media(max-width:420px){
+  .vote-grid{grid-template-columns:1fr!important}
+  .vote-grid button{min-height:56px}
+  .mobile-game-dock{left:6px;right:6px}
+  .night-mobile-confirm{left:6px;right:6px}
+}
