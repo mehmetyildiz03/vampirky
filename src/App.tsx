@@ -21,6 +21,12 @@ import {
 } from './game/engine'
 import { completeNightWithBots, completeVoteWithBots } from './game/demo'
 import { ROLE_DEFINITIONS, buildRolePack, countRoles } from './game/roles'
+import {
+  createPrivateDeductionState,
+  getDeductionMark,
+  setDeductionMark,
+} from './game/deduction'
+import type { DeductionMark, PrivateDeductionState } from './game/deduction'
 import type { ActionClaim, ClaimKind, GameState, RoleId, StructuredClaim } from './game/types'
 
 type Screen =
@@ -127,6 +133,9 @@ function Lore() {
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home')
   const [game, setGame] = useState<GameState | null>(null)
+  const [deduction, setDeduction] = useState<PrivateDeductionState>(() =>
+    createPrivateDeductionState(HUMAN_ID, players.map((player) => player.id)),
+  )
   const [selected, setSelected] = useState<number | null>(null)
   const [tab, setTab] = useState<'claims' | 'votes' | 'clues'>('claims')
   const [notes, setNotes] = useState(['Ali ve Ayşe aynı rolü iddia ediyor.', 'Burak’ın tavırları gergin.'])
@@ -212,8 +221,15 @@ export default function App() {
   const launchGame = () => {
     const next = createGame(players.map(({ id, name }) => ({ id, name })))
     setGame(next)
+    setDeduction(
+      createPrivateDeductionState(HUMAN_ID, players.map((player) => player.id)),
+    )
     setSelected(null)
     setScreen('role')
+  }
+
+  const updateDeductionMark = (playerId: number, mark: DeductionMark) => {
+    setDeduction((current) => setDeductionMark(current, playerId, mark))
   }
 
   const toFirstNight = () => {
@@ -302,6 +318,8 @@ export default function App() {
           onVote={toVoting}
           onOpenClaimComposer={openClaimComposer}
           onWithdrawClaim={removeClaim}
+          deduction={deduction}
+          onDeductionChange={updateDeductionMark}
         />
       )}
       {claimComposerOpen && game && (
@@ -456,6 +474,8 @@ function Day({
   onVote,
   onOpenClaimComposer,
   onWithdrawClaim,
+  deduction,
+  onDeductionChange,
 }: {
   game: GameState
   selected: number | null
@@ -469,6 +489,8 @@ function Day({
   onVote: () => void
   onOpenClaimComposer: () => void
   onWithdrawClaim: (claimId: number) => void
+  deduction: PrivateDeductionState
+  onDeductionChange: (playerId: number, mark: DeductionMark) => void
 }) {
   const publicPlayers = getPrivatePlayerView(game, HUMAN_ID).publicPlayers
   const aliveById = new Map(publicPlayers.map((player) => [player.id, player.alive]))
@@ -484,6 +506,7 @@ function Day({
             const x = 50 + Math.cos(angle) * 40
             const y = 50 + Math.sin(angle) * 37
             const alive = aliveById.get(player.id) ?? true
+            const privateMark = getDeductionMark(deduction, player.id)
             return (
               <button
                 key={player.id}
@@ -494,6 +517,14 @@ function Day({
                 <i>{index + 1}</i>
                 <span className="avatar player-avatar" style={{ '--accent': player.accent } as CSSProperties}>{player.initial}</span>
                 <b>{player.name}</b><em>{alive ? '•••' : '☠'}</em>
+                {privateMark !== 'uncertain' && (
+                  <small
+                    className={'private-deduction-mark ' + privateMark}
+                    title={privateMark === 'suspicious' ? 'Özel değerlendirme: Şüpheli' : 'Özel değerlendirme: Güveniyorum'}
+                  >
+                    {privateMark === 'suspicious' ? '!' : '✓'}
+                  </small>
+                )}
               </button>
             )
           })}
@@ -524,7 +555,16 @@ function Day({
           <div className="note-input"><input value={note} onChange={(event) => setNote(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && addNote()} placeholder="Not ekle..." /><button onClick={addNote}>＋</button></div>
         </div>
       </aside>
-      {selected && <Inspector game={game} player={players.find((player) => player.id === selected)!} alive={aliveById.get(selected) ?? true} close={() => setSelected(null)} />}
+      {selected && (
+        <Inspector
+          game={game}
+          player={players.find((player) => player.id === selected)!}
+          alive={aliveById.get(selected) ?? true}
+          deductionMark={getDeductionMark(deduction, selected)}
+          onDeductionChange={(mark) => onDeductionChange(selected, mark)}
+          close={() => setSelected(null)}
+        />
+      )}
     </main>
   )
 }
@@ -858,11 +898,15 @@ function Inspector({
   game,
   player,
   alive,
+  deductionMark,
+  onDeductionChange,
   close,
 }: {
   game: GameState
   player: Player
   alive: boolean
+  deductionMark: DeductionMark
+  onDeductionChange: (mark: DeductionMark) => void
   close: () => void
 }) {
   const timeline = [...getPlayerTimeline(game, player.id)].reverse()
@@ -899,10 +943,34 @@ function Inspector({
         </div>
       </div>
 
-      <div className="inspector-trust">
-        <button className="bad">✕ Şüpheli</button>
-        <button>? Emin Değilim</button>
-        <button className="good">✓ Güveniyorum</button>
+      <div className="private-deduction-head">
+        <div>
+          <b>Özel Değerlendirmen</b>
+          <small>Yalnızca sana görünür · oyun gerçeği değildir</small>
+        </div>
+      </div>
+      <div className="inspector-trust" role="group" aria-label="Özel oyuncu değerlendirmesi">
+        <button
+          className={'bad ' + (deductionMark === 'suspicious' ? 'active' : '')}
+          aria-pressed={deductionMark === 'suspicious'}
+          onClick={() => onDeductionChange('suspicious')}
+        >
+          ✕ Şüpheli
+        </button>
+        <button
+          className={deductionMark === 'uncertain' ? 'active neutral' : ''}
+          aria-pressed={deductionMark === 'uncertain'}
+          onClick={() => onDeductionChange('uncertain')}
+        >
+          ? Kararsızım
+        </button>
+        <button
+          className={'good ' + (deductionMark === 'trusted' ? 'active' : '')}
+          aria-pressed={deductionMark === 'trusted'}
+          onClick={() => onDeductionChange('trusted')}
+        >
+          ✓ Güveniyorum
+        </button>
       </div>
 
       <div className="timeline-head">
