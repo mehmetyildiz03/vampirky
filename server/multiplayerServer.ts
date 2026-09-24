@@ -38,6 +38,15 @@ interface CreateRoomBody {
   roomId?: string
 }
 
+interface CreateLobbyBody {
+  hostName: string
+  roomId?: string
+}
+
+interface JoinLobbyBody {
+  name: string
+}
+
 function json(
   response: ServerResponse,
   status: number,
@@ -137,6 +146,30 @@ export function createMultiplayerServer(
         return
       }
 
+      if (request.method === 'POST' && url.pathname === '/api/lobbies') {
+        const body = await readJsonBody<CreateLobbyBody>(request)
+        if (typeof body.hostName !== 'string') {
+          throw new Error('hostName is required.')
+        }
+        const session = sessions.createLobby(body.hostName, body.roomId)
+        json(response, 201, session, allowedOrigin)
+        return
+      }
+
+      const lobbyJoinMatch = url.pathname.match(
+        /^\/api\/lobbies\/([^/]+)\/join$/,
+      )
+      if (request.method === 'POST' && lobbyJoinMatch) {
+        const roomId = decodeURIComponent(lobbyJoinMatch[1])
+        const body = await readJsonBody<JoinLobbyBody>(request)
+        if (typeof body.name !== 'string') throw new Error('name is required.')
+        const session = sessions.joinLobby(roomId, body.name)
+        json(response, 201, session, allowedOrigin)
+        gateway.broadcastRoom(roomId)
+        return
+      }
+
+      // Legacy active-game bootstrap retained for transport integration tooling.
       if (request.method === 'POST' && url.pathname === '/api/rooms') {
         const body = await readJsonBody<CreateRoomBody>(request)
         validateCreateRoomBody(body)
