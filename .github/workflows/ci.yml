@@ -18,3 +18,46 @@ jobs:
       - run: npm install
       - run: npm test
       - run: npm run build
+
+
+  container-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production backend image
+        run: docker build -t vampirky-backend:ci .
+      - name: Start backend with persistent volume
+        run: |
+          mkdir -p "$RUNNER_TEMP/vampirky-state"
+          docker run -d --name vampirky-backend             -p 8787:8787             -e PORT=8787             -e VAMPIRKY_ALLOWED_ORIGINS=https://mehmetyildiz03.github.io             -v "$RUNNER_TEMP/vampirky-state:/data"             vampirky-backend:ci
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8787/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs vampirky-backend
+          exit 1
+      - name: Create persisted lobby
+        run: |
+          curl --fail --silent             -H 'Origin: https://mehmetyildiz03.github.io'             -H 'Content-Type: application/json'             -d '{"hostName":"SmokeHost","roomId":"SMOKE1"}'             http://127.0.0.1:8787/api/lobbies             | tee "$RUNNER_TEMP/create.json"
+          grep -q '"roomId":"SMOKE1"' "$RUNNER_TEMP/create.json"
+      - name: Restart image and restore lobby
+        run: |
+          docker stop vampirky-backend
+          docker rm vampirky-backend
+          docker run -d --name vampirky-backend             -p 8787:8787             -e PORT=8787             -e VAMPIRKY_ALLOWED_ORIGINS=https://mehmetyildiz03.github.io             -v "$RUNNER_TEMP/vampirky-state:/data"             vampirky-backend:ci
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8787/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent             -H 'Origin: https://mehmetyildiz03.github.io'             -H 'Content-Type: application/json'             -d '{"name":"SmokeGuest"}'             http://127.0.0.1:8787/api/lobbies/SMOKE1/join             | tee "$RUNNER_TEMP/join.json"
+          grep -q '"roomId":"SMOKE1"' "$RUNNER_TEMP/join.json"
+      - name: Backend logs
+        if: always()
+        run: docker logs vampirky-backend || true
+      - name: Stop backend
+        if: always()
+        run: docker rm -f vampirky-backend || true

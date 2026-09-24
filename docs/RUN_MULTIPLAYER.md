@@ -151,3 +151,12 @@ repository variable to the HTTPS backend origin and rerun Deploy Pages.
 Do not mount the same `/data` volume into multiple replicas. Horizontal
 scaling requires replacing the JSON state store with a transactional shared
 store.
+
+
+### Container CI smoke test
+
+CI now builds the production Docker image, mounts a real host directory at
+`/data`, creates a lobby, destroys the container, starts a fresh container
+against the same volume, and joins the pre-existing room. This catches both
+container boot regressions and persistent-volume permission problems before
+deployment.
