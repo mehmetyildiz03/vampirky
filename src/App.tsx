@@ -1555,9 +1555,9 @@ function Day({
                   setSelected(selected === player.id ? null : player.id)
                 }}
               >
-                <i>{index + 1}</i>
                 <span className="avatar player-avatar" style={{ '--accent': player.accent } as CSSProperties}>{player.initial}</span>
-                <b>{player.name}</b><em>{alive ? '•••' : '☠'}</em>
+                <b>{player.name}</b>
+                {!alive && <em>☠</em>}
                 {privateMark !== 'uncertain' && (
                   <small
                     className={'private-deduction-mark ' + privateMark}
@@ -1572,7 +1572,11 @@ function Day({
           <div className="bonfire"><i /><b /></div>
         </div>
         <Lore />
-        <button className="vote" onClick={onVote}>Oylamaya Geç <b>›</b></button>
+        <button className="vote council-vote-action" onClick={onVote}>
+          <span>🗳</span>
+          <div><small>TARTIŞMAYI BİTİR</small><b>Oylamaya Geç</b></div>
+          <strong>›</strong>
+        </button>
         <nav className="mobile-game-dock" aria-label="Köy meclisi araçları">
           <button
             className={panelMode === 'chat' && mobilePanelOpen ? 'active' : ''}
@@ -1644,7 +1648,7 @@ function Day({
           </div>
           <span>{game.round}. Gün</span>
         </header>
-        <blockquote>“Sistem kayıt tutar. Kararı sen verirsin.”</blockquote>
+        <p className="deduction-principle">Sistem kayıt tutar; kararı sen verirsin.</p>
         <nav className="deduction-tabs" aria-label="Dedüksiyon bölümleri">
           <button className={tab === 'claims' ? 'active' : ''} onClick={() => setTab('claims')}>
             <span>◇</span><b>İddialar</b><em>{activeClaimCount}</em>
@@ -2852,12 +2856,21 @@ function Dawn({ game, onContinue }: { game: GameState; onContinue: () => void })
   return (
     <main className="result-shell dawn-shell">
       <Brand />
-      <section className="flow-card dawn-card">
-        <small>🌅 {game.round}. GÜN</small>
-        <h1>{victim ? 'Köy bir eksik uyandı.' : 'Bu gece kimse ölmedi.'}</h1>
-        {victim ? <div className="dawn-victim"><span className="avatar big" style={{ '--accent': victim.accent } as CSSProperties}>{victim.initial}</span><b>{victim.name}</b><em>gece öldürüldü</em></div> : <div className="quiet-night">Köy meydanı alışılmadık derecede sessiz.</div>}
-        <p>Gece aksiyonlarının ayrıntıları gizli kalır. Köylüler yalnızca sabah gördükleri sonucu bilir.</p>
-        <button className="start" onClick={onContinue}>Köy Meclisine Git <b>›</b></button>
+      <section className={'flow-card dawn-card ' + (victim ? 'has-victim' : 'quiet')}>
+        <div className="dawn-kicker"><span>🌅</span><b>{game.round}. GÜN</b><em>Şafak</em></div>
+        <h1>{victim ? 'Köy bir eksik uyandı.' : 'Gece sessiz geçti.'}</h1>
+        {victim ? (
+          <div className="dawn-victim">
+            <span className="avatar big" style={{ '--accent': victim.accent } as CSSProperties}>{victim.initial}</span>
+            <div><b>{victim.name}</b><em>gece öldürüldü</em></div>
+          </div>
+        ) : (
+          <div className="quiet-night">Köy meydanında bu sabah kimse eksik değil.</div>
+        )}
+        <p>Gece aksiyonlarının ayrıntıları gizli kalır. Köy yalnızca sabahın sonucunu görür.</p>
+        <button className="start dawn-continue" onClick={onContinue}>
+          <span>Köy Meclisine Geç</span><b>›</b>
+        </button>
       </section>
       <Lore />
     </main>
