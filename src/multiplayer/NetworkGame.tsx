@@ -527,7 +527,11 @@ function PlayerGrid({
       ) : (
         <div className="network-fire">🔥</div>
       )}
-      <div className={'network-player-grid ' + (nightLayout ? 'night-ring' : '')}>
+      <div className={[
+        'network-player-grid',
+        nightLayout ? 'night-ring' : '',
+        'players-' + snapshot.players.length,
+      ].join(' ')}>
         {snapshot.players.map((player, index) => {
           const canSelect = selectable.has(player.id)
           const isSelf = player.id === snapshot.self.id
