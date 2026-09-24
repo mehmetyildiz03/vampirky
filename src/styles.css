@@ -426,3 +426,202 @@
   .network-action-bar button{min-height:42px}
   .network-game-side{left:5px;right:5px;bottom:61px;max-height:82vh}
 }
+
+
+/* P3.8 — cinematic production Night parity */
+@media(min-width:961px){
+  .network-game{
+    height:100vh;
+    min-height:720px;
+    overflow:hidden;
+  }
+  .network-game-layout{
+    height:calc(100vh - 176px);
+    min-height:540px;
+  }
+  .network-stage,
+  .network-game-side{
+    min-height:0;
+  }
+  .network-game-side{
+    overflow:auto;
+    scrollbar-width:thin;
+    scrollbar-color:#554431 #0a0d10;
+  }
+  .network-game-night .network-stage{
+    overflow:hidden;
+  }
+  .network-night-council{
+    min-height:0;
+    height:100%;
+    padding:0;
+    overflow:hidden;
+    background:
+      radial-gradient(circle at 50% 53%,#d36d171c 0 5%,transparent 16%),
+      radial-gradient(circle at 50% 48%,#355b7b1e 0 18%,transparent 55%),
+      linear-gradient(180deg,#0a1624aa,#080b11ee);
+  }
+  .network-player-grid.night-ring{
+    position:absolute;
+    inset:0;
+    display:block;
+  }
+  .network-player-grid.night-ring .network-player-card{
+    position:absolute;
+    left:var(--night-x);
+    top:var(--night-y);
+    transform:translate(-50%,-50%);
+    width:104px;
+    min-height:0;
+    padding:0;
+    border:0;
+    background:transparent;
+    box-shadow:none;
+    gap:3px;
+    overflow:visible;
+  }
+  .network-player-grid.night-ring .network-player-card:hover{
+    transform:translate(-50%,-50%) scale(1.04);
+  }
+  .network-player-grid.night-ring .network-avatar{
+    width:64px;
+    height:64px;
+    font-size:20px;
+    border-color:#77634d;
+    filter:grayscale(.45) brightness(.72);
+    box-shadow:0 8px 20px #000b;
+  }
+  .network-player-grid.night-ring .network-player-card>b{
+    min-width:78px;
+    margin-top:0;
+    padding:3px 7px;
+    border:1px solid #3b342d;
+    background:#0b0d10e8;
+    color:#9c958d;
+    font-size:10px;
+  }
+  .network-player-grid.night-ring .network-player-card>small{
+    margin-top:1px;
+    padding:2px 5px;
+    border-radius:10px;
+    background:#090c10b8;
+    font-size:7px;
+    color:#696b6c;
+  }
+  .network-player-grid.night-ring .network-player-card.selectable{
+    color:#eee;
+  }
+  .network-player-grid.night-ring .network-player-card.selectable .network-avatar{
+    filter:none;
+    border-color:#b99360;
+    box-shadow:
+      0 0 0 3px #0a0d11,
+      0 0 24px #d3a05e55,
+      0 8px 20px #000b;
+  }
+  .network-player-grid.night-ring .network-player-card.selectable>small{
+    color:#d0b17d;
+    border:1px solid #5f4930;
+  }
+  .network-player-grid.night-ring .network-player-card.selected{
+    transform:translate(-50%,-50%) scale(1.09);
+    background:transparent!important;
+    box-shadow:none!important;
+  }
+  .network-player-grid.night-ring .network-player-card.selected .network-avatar{
+    border-color:#e6b66f;
+    box-shadow:
+      0 0 0 3px #19120b,
+      0 0 35px #e59b3c88,
+      0 12px 24px #000c;
+  }
+  .network-player-grid.night-ring .network-player-card.selected>b{
+    border-color:#b77c38;
+    color:#f0d1a0;
+  }
+  .network-player-grid.night-ring .network-player-card.known-ally .network-avatar{
+    box-shadow:
+      0 0 0 3px #160b0d,
+      0 0 24px #9d303b55,
+      0 8px 20px #000b;
+  }
+  .network-player-grid.night-ring .network-player-card.known-ally>small{
+    color:#b36c71;
+  }
+  .network-player-grid.night-ring .network-player-card.dead{
+    opacity:.32;
+  }
+  .network-night-center{
+    position:absolute;
+    z-index:1;
+    left:50%;
+    top:52%;
+    transform:translate(-50%,-50%);
+    width:122px;
+    height:122px;
+    border-radius:50%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    border:1px solid #493924;
+    background:
+      radial-gradient(circle,#cb681b33 0 12%,#17130f99 38%,#09101a55 68%,transparent 72%);
+    box-shadow:0 0 70px #c2641b22;
+    pointer-events:none;
+  }
+  .network-night-center>span{
+    font-size:32px;
+    color:#d9c190;
+    text-shadow:0 0 20px #d5b36a55;
+  }
+  .network-night-center>b{
+    margin-top:2px;
+    font-size:11px;
+    color:#d1b786;
+  }
+  .network-night-center>small{
+    margin-top:3px;
+    font-size:7px;
+    color:#756f68;
+  }
+  .network-game-night .network-action-bar{
+    min-height:58px;
+  }
+}
+.network-night-meta{
+  display:grid;
+  gap:6px;
+  margin-top:7px;
+  padding:8px;
+  border:1px solid #334555;
+  background:linear-gradient(120deg,#0b1219,#0d1014);
+}
+.network-night-meta>div{
+  display:flex;
+  flex-direction:column;
+}
+.network-night-meta small{
+  color:#738b9d;
+  font-size:7px;
+  letter-spacing:.08em;
+}
+.network-night-meta b{
+  margin-top:2px;
+  color:#c8d5dd;
+  font-size:10px;
+}
+.network-night-allies{
+  padding-top:6px;
+  border-top:1px solid #283844;
+}
+.network-night-allies span{
+  margin-top:2px;
+  color:#bd777c;
+  font-size:9px;
+}
+@media(max-width:960px){
+  .network-player-grid.night-ring{
+    display:grid;
+  }
+}

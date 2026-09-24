@@ -199,6 +199,31 @@ export function NetworkGame({
             </div>
           </div>
 
+          {snapshot.phase === 'night' && snapshot.self.alive && (
+            <div className="network-night-meta">
+              <div>
+                <small>GECE DURUMU</small>
+                <b>
+                  {snapshot.capabilities.hasSubmittedNightAction
+                    ? 'Seçimin sunucuya ulaştı'
+                    : snapshot.capabilities.canActAtNight
+                      ? 'Hedefini seç'
+                      : 'Diğer oyuncular bekleniyor'}
+                </b>
+              </div>
+              {snapshot.self.knownVampireIds.length > 0 && (
+                <div className="network-night-allies">
+                  <small>VAMPİR TAKIMIN</small>
+                  <span>
+                    {snapshot.self.knownVampireIds
+                      .map((id) => playerName(snapshot, id))
+                      .join(', ')}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
           {snapshot.self.intel.length > 0 && (
             <div className="network-intel">
               <small>KÂHİN KAYITLARI</small>
@@ -342,11 +367,6 @@ function RoleRevealPhase({
             : '0%' }} />
         </div>
         <small>{snapshot.phaseReadyCount}/{snapshot.phaseReadyRequired} oyuncu rolünü gördü</small>
-        <div className="network-ready-progress intermission-progress">
-          <span style={{ width: snapshot.phaseReadyRequired
-            ? (snapshot.phaseReadyCount / snapshot.phaseReadyRequired * 100) + '%'
-            : '0%' }} />
-        </div>
         <button
           className="start"
           disabled={!snapshot.capabilities.canMarkPhaseReady}
@@ -408,6 +428,11 @@ function IntermissionPhase({
           deadlineAt={snapshot.phaseDeadlineAt}
           durationSeconds={snapshot.phaseDurationSeconds}
         />
+        <div className="network-ready-progress intermission-progress">
+          <span style={{ width: snapshot.phaseReadyRequired
+            ? (snapshot.phaseReadyCount / snapshot.phaseReadyRequired * 100) + '%'
+            : '0%' }} />
+        </div>
         <button
           className="start"
           disabled={!snapshot.capabilities.canMarkPhaseReady}
@@ -441,14 +466,38 @@ function PlayerGrid({
         ? snapshot.capabilities.voteTargetIds
         : [],
   )
+  const nightLayout = snapshot.phase === 'night'
+  const vampireAllies = new Set(snapshot.self.knownVampireIds)
 
   return (
-    <div className="network-council">
-      <div className="network-fire">🔥</div>
-      <div className="network-player-grid">
-        {snapshot.players.map((player) => {
+    <div className={'network-council ' + (nightLayout ? 'network-night-council' : '')}>
+      {nightLayout ? (
+        <div className="network-night-center" aria-hidden>
+          <span>☾</span>
+          <b>{snapshot.round}. Gece</b>
+          <small>
+            {snapshot.self.alive
+              ? snapshot.capabilities.canActAtNight
+                ? 'Sessizce karar ver'
+                : 'Köy uyuyor'
+              : 'Hayalet olarak izle'}
+          </small>
+        </div>
+      ) : (
+        <div className="network-fire">🔥</div>
+      )}
+      <div className={'network-player-grid ' + (nightLayout ? 'night-ring' : '')}>
+        {snapshot.players.map((player, index) => {
           const canSelect = selectable.has(player.id)
           const isSelf = player.id === snapshot.self.id
+          const isAlly = vampireAllies.has(player.id)
+          const angle = index / snapshot.players.length * Math.PI * 2 - Math.PI / 2
+          const nightStyle = nightLayout
+            ? ({
+                '--night-x': (50 + Math.cos(angle) * 41) + '%',
+                '--night-y': (50 + Math.sin(angle) * 38) + '%',
+              } as React.CSSProperties)
+            : undefined
           return (
             <button
               key={player.id}
@@ -458,7 +507,9 @@ function PlayerGrid({
                 canSelect ? 'selectable' : '',
                 selectedTarget === player.id ? 'selected' : '',
                 isSelf ? 'self' : '',
+                isAlly ? 'known-ally' : '',
               ].join(' ')}
+              style={nightStyle}
               disabled={!canSelect}
               onClick={() => canSelect && onSelect(player.id)}
             >
@@ -471,9 +522,15 @@ function PlayerGrid({
                   ? '☠ Hayalet'
                   : isSelf
                     ? 'Sen'
-                    : canSelect
-                      ? 'Seçilebilir'
-                      : 'Hayatta'}
+                    : isAlly
+                      ? '🦇 Takım'
+                      : canSelect
+                        ? selectedTarget === player.id
+                          ? '✓ Seçildi'
+                          : 'Hedef olabilir'
+                        : nightLayout
+                          ? 'Uyuyor'
+                          : 'Hayatta'}
               </small>
             </button>
           )
@@ -522,14 +579,14 @@ function NightActionBar({
             : playerName(snapshot, selectedTarget)}
         </b>
         {snapshot.capabilities.hasSubmittedNightAction && (
-          <span>✓ Önceki seçimin server'a ulaştı; faz çözülmediyse değiştirebilirsin.</span>
+          <span>✓ Seçimin sunucuya ulaştı; gece çözülmediyse değiştirebilirsin.</span>
         )}
       </div>
       <button
         disabled={selectedTarget === null}
         onClick={() => selectedTarget !== null && onSubmit(selectedTarget)}
       >
-        {snapshot.capabilities.hasSubmittedNightAction ? 'Seçimi Güncelle' : 'Aksiyonu Kilitle'} ›
+        {snapshot.capabilities.hasSubmittedNightAction ? 'Seçimi Güncelle' : 'Seçimi Gönder'} ›
       </button>
     </div>
   )
@@ -551,10 +608,10 @@ function VoteActionBar({
   return (
     <div className="network-action-bar vote">
       <div>
-        <small>OYUNU VER</small>
+        <small>OYUNU KULLAN</small>
         <b>{selectedTarget === null ? 'Köyden gönderilecek oyuncuyu seç' : playerName(snapshot, selectedTarget)}</b>
         {snapshot.capabilities.hasSubmittedVote && (
-          <span>✓ Oyun server'a ulaştı; sonuçlanmadıysa değiştirebilirsin.</span>
+          <span>✓ Verdiğin oy sunucuya ulaştı; oylama bitmediyse değiştirebilirsin.</span>
         )}
       </div>
       <button
