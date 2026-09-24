@@ -3,7 +3,7 @@ import type {
   ServerTransportMessage,
   SessionRejectedMessage,
 } from './protocol'
-import { RoomSessionService } from './sessionService'
+import { RoomSessionService, type SessionBroadcast } from './sessionService'
 
 export interface TransportPeer {
   id: string
@@ -28,20 +28,18 @@ export class RoomGateway {
       peer.send({
         type: 'session.rejected',
         code: 'invalid_session',
-        message: 'Resume a valid session before sending game commands.',
+        message: 'Resume a valid session before sending room commands.',
       })
       return
     }
 
     try {
-      const result = this.sessions.dispatch(sessionToken, message.command)
-      peer.send(result.response)
+      const result = message.type === 'lobby.command'
+        ? this.sessions.dispatchLobby(sessionToken, message.command)
+        : this.sessions.dispatchGame(sessionToken, message.command)
 
-      if (result.mutated) {
-        for (const broadcast of result.broadcasts) {
-          this.peerBySessionToken.get(broadcast.sessionToken)?.send(broadcast.message)
-        }
-      }
+      peer.send(result.response)
+      if (result.mutated) this.sendBroadcasts(result.broadcasts)
     } catch {
       peer.send({
         type: 'session.rejected',
@@ -52,6 +50,10 @@ export class RoomGateway {
     }
   }
 
+  broadcastRoom(roomId: string): void {
+    this.sendBroadcasts(this.sessions.broadcastsForRoomId(roomId))
+  }
+
   disconnect(peer: TransportPeer): void {
     const sessionToken = this.sessionByPeerId.get(peer.id)
     this.sessionByPeerId.delete(peer.id)
@@ -60,6 +62,17 @@ export class RoomGateway {
       this.peerBySessionToken.get(sessionToken)?.id === peer.id
     ) {
       this.peerBySessionToken.delete(sessionToken)
+      try {
+        this.sendBroadcasts(this.sessions.setSessionConnected(sessionToken, false))
+      } catch {
+        // Session may already be invalidated.
+      }
+    }
+  }
+
+  private sendBroadcasts(broadcasts: SessionBroadcast[]): void {
+    for (const broadcast of broadcasts) {
+      this.peerBySessionToken.get(broadcast.sessionToken)?.send(broadcast.message)
     }
   }
 
@@ -89,6 +102,7 @@ export class RoomGateway {
 
       this.sessionByPeerId.set(peer.id, sessionToken)
       this.peerBySessionToken.set(sessionToken, peer)
+      const presenceBroadcasts = this.sessions.setSessionConnected(sessionToken, true)
 
       peer.send({
         type: 'session.ready',
@@ -97,11 +111,8 @@ export class RoomGateway {
         revision: session.revision,
         caughtUp: session.caughtUp,
       })
-      peer.send({
-        type: 'game.snapshot',
-        revision: session.revision,
-        snapshot: session.snapshot,
-      })
+      peer.send(this.sessions.messageForSession(sessionToken))
+      this.sendBroadcasts(presenceBroadcasts)
     } catch (error) {
       peer.send(sessionError(error))
     }

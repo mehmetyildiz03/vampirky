@@ -25,10 +25,11 @@ export interface CommandDispatchResult {
 
 export class AuthoritativeRoom {
   private state: GameState
-  private revision = 0
+  private revision: number
 
-  constructor(initialState: GameState) {
+  constructor(initialState: GameState, initialRevision = 0) {
     this.state = initialState
+    this.revision = initialRevision
   }
 
   getRevision(): number {

@@ -66,11 +66,47 @@ export type ClientGameCommand =
       claimId: number
     })
 
+export type ClientLobbyCommand =
+  | (CommandMeta & {
+      type: 'lobby.ready'
+      ready: boolean
+    })
+  | (CommandMeta & {
+      type: 'lobby.start'
+    })
+
+export interface LobbyPlayerSnapshot {
+  id: number
+  name: string
+  ready: boolean
+  connected: boolean
+  isHost: boolean
+}
+
+export interface LobbySnapshot {
+  roomId: string
+  revision: number
+  phase: 'lobby'
+  hostPlayerId: number
+  minPlayers: number
+  maxPlayers: number
+  canStart: boolean
+  players: LobbyPlayerSnapshot[]
+}
+
 export interface SnapshotMessage {
   type: 'game.snapshot'
   revision: number
   snapshot: ViewerGameSnapshot
 }
+
+export interface LobbySnapshotMessage {
+  type: 'lobby.snapshot'
+  revision: number
+  snapshot: LobbySnapshot
+}
+
+export type RoomSnapshotMessage = SnapshotMessage | LobbySnapshotMessage
 
 export interface CommandAcceptedMessage {
   type: 'command.accepted'
@@ -92,7 +128,7 @@ export interface CommandRejectedMessage {
 }
 
 export type ServerGameMessage =
-  | SnapshotMessage
+  | RoomSnapshotMessage
   | CommandAcceptedMessage
   | CommandRejectedMessage
 
@@ -108,9 +144,15 @@ export interface GameCommandMessage {
   command: ClientGameCommand
 }
 
+export interface LobbyCommandMessage {
+  type: 'lobby.command'
+  command: ClientLobbyCommand
+}
+
 export type ClientTransportMessage =
   | ReconnectHello
   | GameCommandMessage
+  | LobbyCommandMessage
 
 export interface SessionReadyMessage {
   type: 'session.ready'
