@@ -1223,3 +1223,208 @@
     flex-direction:column;
   }
 }
+
+
+/* P3.12 — production Discussion/Voting/Resolution/Ghost/End audit */
+.network-seat-speech{
+  position:absolute;
+  z-index:6;
+  top:-22px;
+  left:50%;
+  transform:translateX(-18%);
+  width:max-content;
+  max-width:170px;
+  min-width:54px;
+  padding:5px 7px;
+  border:1px solid #8a6b48;
+  border-radius:9px 9px 9px 2px;
+  background:#f0dfc4;
+  color:#2b1c12;
+  box-shadow:0 8px 18px #0009;
+  font-size:8px!important;
+  font-weight:600;
+  line-height:1.25;
+  text-align:left;
+  overflow:hidden;
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+  pointer-events:none;
+  animation:seatSpeechIn .18s ease-out;
+}
+.network-player-card{
+  position:relative;
+}
+.network-ghost-guide{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:4px;
+  margin-top:7px;
+}
+.network-ghost-guide>div{
+  min-width:0;
+  padding:6px;
+  border:1px solid #33434f;
+  background:#0d141a;
+  display:grid;
+  grid-template-columns:22px 1fr;
+  grid-template-rows:auto auto;
+  gap:1px 5px;
+}
+.network-ghost-guide>div.primary{
+  border-color:#506a7c;
+  background:#111c24;
+}
+.network-ghost-guide span{
+  grid-row:1/3;
+  display:grid;
+  place-items:center;
+  color:#98afbd;
+}
+.network-ghost-guide b{
+  font-size:8px;
+  color:#c5d2d9;
+}
+.network-ghost-guide small{
+  font-size:7px;
+  color:#74838d;
+  line-height:1.25;
+}
+.network-intermission-player{
+  width:max-content;
+  min-width:210px;
+  margin:10px auto;
+  padding:8px 12px;
+  display:grid;
+  grid-template-columns:46px 1fr;
+  align-items:center;
+  gap:8px;
+  border:1px solid #604139;
+  background:linear-gradient(90deg,#1f1212,#0f1317);
+  text-align:left;
+}
+.network-intermission-player .network-avatar{
+  width:42px;
+  height:42px;
+}
+.network-intermission-player>div{
+  display:flex;
+  flex-direction:column;
+}
+.network-intermission-player b{
+  color:#dec8ac;
+  font-size:12px;
+}
+.network-intermission-player small{
+  margin-top:2px;
+  color:#a46d6a;
+  font-size:8px;
+}
+.network-game-voting .network-player-card.selectable{
+  border-color:#76493c;
+  background:#17100f;
+}
+.network-game-voting .network-player-card.selected{
+  border-color:#d06d55!important;
+  background:#2b1513!important;
+  box-shadow:0 0 24px #b8462f35;
+}
+.network-end-card{
+  position:relative;
+  overflow:hidden;
+}
+.network-end-card.winner-village{
+  background:
+    radial-gradient(circle at 50% 8%,#b18a3d20,transparent 42%),
+    #0b0e12;
+}
+.network-end-card.winner-vampire{
+  background:
+    radial-gradient(circle at 50% 8%,#9d1f2b24,transparent 42%),
+    #0b0e12;
+}
+.network-end-kicker{
+  display:flex;
+  justify-content:center;
+  gap:8px;
+  margin-bottom:6px;
+  color:#917957;
+  font-size:8px;
+  letter-spacing:.12em;
+}
+.network-end-card.winner-village h1{
+  color:#dbbd77;
+  text-shadow:0 0 22px #b88c3840;
+}
+.network-end-card.winner-vampire h1{
+  color:#d85a62;
+  text-shadow:0 0 22px #a31f2945;
+}
+.network-end-role-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:end;
+  gap:10px;
+  margin-top:15px;
+  padding-bottom:6px;
+  border-bottom:1px solid #3d342c;
+  text-align:left;
+}
+.network-end-role-head b{
+  color:#dfc7a4;
+  font-size:12px;
+}
+.network-end-role-head small{
+  color:#746d65;
+  font-size:8px;
+}
+.network-revealed-grid{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+.network-revealed-grid>div{
+  position:relative;
+  display:grid;
+  grid-template-columns:34px 1fr auto;
+  align-items:center;
+  gap:7px;
+  text-align:left;
+}
+.network-revealed-grid>div>div{
+  display:flex;
+  flex-direction:column;
+}
+.network-revealed-grid>div>div>b{
+  font-size:10px;
+}
+.network-revealed-grid>div>div>span{
+  font-size:8px;
+}
+.network-revealed-grid>div>small{
+  color:#718078;
+  font-size:7px;
+}
+.network-revealed-grid>div.dead{
+  opacity:.55;
+  filter:grayscale(.65);
+}
+.network-revealed-grid>div.self{
+  border-color:#7c623f;
+  box-shadow:inset 3px 0 0 #b18a52;
+}
+@media(max-width:560px){
+  .network-seat-speech{
+    top:-18px;
+    max-width:120px;
+    font-size:7px!important;
+  }
+  .network-ghost-guide{
+    grid-template-columns:1fr;
+  }
+  .network-revealed-grid{
+    grid-template-columns:1fr;
+  }
+  .network-end-role-head{
+    align-items:flex-start;
+    flex-direction:column;
+  }
+}

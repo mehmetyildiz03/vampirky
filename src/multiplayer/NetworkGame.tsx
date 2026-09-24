@@ -199,6 +199,14 @@ export function NetworkGame({
             </div>
           </div>
 
+          {!snapshot.self.alive && (
+            <div className="network-ghost-guide">
+              <div><span>⌂</span><b>Köyü izle</b><small>Köy sohbetini okuyabilirsin</small></div>
+              <div className="primary"><span>☠</span><b>Hayalet kanalı</b><small>Diğer ölülerle konuşabilirsin</small></div>
+              <div><span>⛔</span><b>Karar yok</b><small>Oy ve gece aksiyonu kullanamazsın</small></div>
+            </div>
+          )}
+
           {snapshot.phase === 'night' && snapshot.self.alive && (
             <div className="network-night-meta">
               <div>
@@ -418,10 +426,23 @@ function IntermissionPhase({
         <small>{mode === 'dawn' ? '☀ ŞAFAK' : '🗳 OYLAMA SONUCU'} · {snapshot.round}. TUR</small>
         <div className="network-intermission-icon">{mode === 'dawn' ? '🌅' : '⚖'}</div>
         <h1>{title}</h1>
+        {eliminated !== null && (
+          <div className="network-intermission-player">
+            <span className="network-avatar" style={{ '--accent': accent(eliminated) } as React.CSSProperties}>
+              {playerName(snapshot, eliminated).charAt(0).toLocaleUpperCase('tr-TR')}
+            </span>
+            <div>
+              <b>{playerName(snapshot, eliminated)}</b>
+              <small>{mode === 'dawn' ? 'Gece öldürüldü' : 'Köyden gönderildi'}</small>
+            </div>
+          </div>
+        )}
         <p>
           {mode === 'dawn'
             ? 'Gece sona erdi. Saldırı ve koruma gibi gizli ayrıntılar açıklanmaz.'
-            : 'Oylama tamamlandı. Köyün kararı kesinleşti ve oy geçmişine işlendi.'}
+            : snapshot.lastVote?.tied
+              ? 'Oylar eşit kaldı; bu tur kimse elenmedi.'
+              : 'Oylama tamamlandı. Elenen oyuncunun gerçek rolü oyun sonuna kadar gizli kalır.'}
         </p>
         <ServerPhaseTimer
           serverNow={snapshot.serverNow}
@@ -468,6 +489,16 @@ function PlayerGrid({
   )
   const nightLayout = snapshot.phase === 'night'
   const vampireAllies = new Set(snapshot.self.knownVampireIds)
+  const latestVillageSpeech = snapshot.phase === 'discussion'
+    ? [...snapshot.chatMessages]
+        .reverse()
+        .find(
+          (message) =>
+            message.channel === 'village' &&
+            message.round === snapshot.round &&
+            message.phase === 'discussion',
+        )
+    : undefined
 
   return (
     <div className={'network-council ' + (nightLayout ? 'network-night-council' : '')}>
@@ -517,6 +548,11 @@ function PlayerGrid({
                 {player.name.charAt(0).toLocaleUpperCase('tr-TR')}
               </span>
               <b>{player.name}</b>
+              {latestVillageSpeech?.authorId === player.id && (
+                <span className="network-seat-speech" title={latestVillageSpeech.text}>
+                  {latestVillageSpeech.text}
+                </span>
+              )}
               <small>
                 {!player.alive
                   ? '☠ Hayalet'
@@ -602,7 +638,12 @@ function VoteActionBar({
   onSubmit: (targetId: number) => void
 }) {
   if (!snapshot.self.alive) {
-    return <div className="network-action-status ghost">☠ Oylamayı Hayalet olarak izliyorsun.</div>
+    return (
+      <div className="network-action-status ghost">
+        <b>☠ Oylamayı Hayalet olarak izliyorsun</b>
+        <span>Oy kullanamazsın; sonuç açıklanana kadar köyün kararını takip edebilirsin.</span>
+      </div>
+    )
   }
 
   return (
@@ -618,7 +659,7 @@ function VoteActionBar({
         disabled={selectedTarget === null}
         onClick={() => selectedTarget !== null && onSubmit(selectedTarget)}
       >
-        {snapshot.capabilities.hasSubmittedVote ? 'Oyumu Değiştir' : 'Oyumu Kilitle'} ›
+        {snapshot.capabilities.hasSubmittedVote ? 'Oyumu Değiştir' : 'Oyumu Kullan'} ›
       </button>
     </div>
   )
@@ -1087,18 +1128,38 @@ function NetworkEnd({
 }) {
   return (
     <main className="network-end">
-      <section className="network-end-card">
-        <small>OYUN SONA ERDİ</small>
+      <section className={'network-end-card winner-' + snapshot.winner}>
+        <div className="network-end-kicker"><span>✦</span><b>OYUN TAMAMLANDI</b><span>✦</span></div>
+        <small>KAZANAN TARAF</small>
         <div className="network-end-icon">{snapshot.winner === 'vampire' ? '🦇' : '☀'}</div>
         <h1>{snapshot.winner === 'vampire' ? 'Vampirler Kazandı' : 'Köy Kazandı'}</h1>
-        <p>{snapshot.round} tur süren oyun tamamlandı. Tüm roller artık açık.</p>
+        <p>{snapshot.round} tur süren oyun tamamlandı. Gizli roller artık açık.</p>
+        <div className="network-end-role-head">
+          <b>Gerçek Roller</b>
+          <small>Oyun boyunca gizli tutulan roller</small>
+        </div>
         <div className="network-revealed-grid">
-          {snapshot.revealedRoles.map((entry) => (
-            <div key={entry.playerId}>
-              <b>{playerName(snapshot, entry.playerId)}</b>
-              <span>{roleVisuals[entry.role].icon} {roleVisuals[entry.role].title}</span>
-            </div>
-          ))}
+          {snapshot.revealedRoles.map((entry) => {
+            const publicPlayer = snapshot.players.find((player) => player.id === entry.playerId)
+            return (
+              <div
+                key={entry.playerId}
+                className={[
+                  publicPlayer?.alive ? 'alive' : 'dead',
+                  entry.playerId === snapshot.self.id ? 'self' : '',
+                ].join(' ')}
+              >
+                <span className="network-avatar" style={{ '--accent': accent(entry.playerId) } as React.CSSProperties}>
+                  {playerName(snapshot, entry.playerId).charAt(0).toLocaleUpperCase('tr-TR')}
+                </span>
+                <div>
+                  <b>{playerName(snapshot, entry.playerId)}</b>
+                  <span>{roleVisuals[entry.role].icon} {roleVisuals[entry.role].title}</span>
+                </div>
+                <small>{publicPlayer?.alive ? 'HAYATTA' : 'ELENDİ'}</small>
+              </div>
+            )
+          })}
         </div>
         <button className="start" onClick={onExit}>Ana Menüye Dön ›</button>
       </section>
