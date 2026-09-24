@@ -625,3 +625,124 @@
     display:grid;
   }
 }
+
+
+/* P3.9 — local Night screenshot audit polish */
+@media(min-width:901px){
+  .phase-night .night-guidance{
+    display:none;
+  }
+  .phase-night .council{
+    min-height:calc(100vh - 112px);
+  }
+  .phase-night .ring{
+    bottom:8%;
+  }
+  .phase-night .role-panel.without-night-chat{
+    min-height:0;
+    height:auto;
+    max-height:calc(100vh - 112px);
+    align-self:start;
+    overflow:hidden;
+  }
+  .phase-night .role-panel.without-night-chat .seer-card>div{
+    height:145px;
+    font-size:72px;
+  }
+}
+.phase-night .phase-badge{
+  top:2px;
+  min-width:218px;
+  padding:6px 14px;
+  background:linear-gradient(180deg,#21190f,#0b0b0c);
+  box-shadow:0 7px 22px #000b,0 0 18px #a86c2b18;
+}
+.phase-night .phase-badge b{font-size:18px}
+.phase-night .phase-badge span{font-size:14px;color:#cbb994}
+.phase-night .sleeping .seat>em:empty{display:none}
+.phase-night .sleeping .seat>em{
+  min-width:22px;
+  min-height:22px;
+  padding:1px 5px;
+  border:1px solid #514b43;
+  background:#0b0e11d9;
+  color:#aab4bc;
+  font-size:13px;
+}
+.phase-night .sleeping .seat:not(.night-disabled)>em{
+  border-color:#477f9c;
+  color:#74d5ff;
+  box-shadow:0 0 12px #4abbe455;
+}
+.phase-night .sleeping .seat.selected>em{
+  border-color:#67d9ff;
+  background:#0b2531;
+  color:#dff7ff;
+}
+.role-panel .night-role-copy{
+  min-width:0;
+}
+.role-panel .night-role-copy>h2{
+  margin-bottom:5px;
+}
+.role-panel .night-role-copy>p{
+  margin:0 0 8px;
+}
+.night-decision{
+  margin-top:12px;
+  padding:10px;
+  border:1px solid #4a4036;
+  background:linear-gradient(145deg,#101318,#0b0d10);
+}
+.night-decision>header{
+  display:flex;
+  align-items:end;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:5px;
+}
+.night-decision>header small{
+  color:#8f806c;
+  font-size:8px;
+  letter-spacing:.1em;
+}
+.night-decision>header b{
+  color:#e4c993;
+  font-size:12px;
+}
+.night-decision>p{
+  margin:0 0 8px!important;
+  color:#8e857a!important;
+  font-size:10px;
+}
+.night-decision .target{
+  min-height:48px;
+}
+.night-decision .seer-btn{
+  width:100%;
+  margin-top:9px;
+  padding:13px;
+  font-size:17px;
+}
+.night-decision .hint{
+  display:block;
+  margin-top:7px;
+  text-align:left;
+  color:#7d746a;
+  font-size:8px;
+  line-height:1.35;
+}
+.role-panel.without-night-chat{
+  grid-template-rows:auto auto auto;
+}
+@media(max-width:900px){
+  .phase-night .night-guidance{
+    display:grid;
+  }
+  .night-decision .seer-btn{
+    display:none;
+  }
+  .role-panel.without-night-chat{
+    min-height:auto;
+  }
+}

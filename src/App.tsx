@@ -2685,7 +2685,14 @@ function Night({
                 onClick={() => enabled && setSelected(player.id)}
               >
                 <span className="avatar player-avatar" style={{ '--accent': player.accent } as CSSProperties}>{player.initial}</span>
-                <b>{player.name}</b><em>{!alive ? '☠' : enabled ? '◌' : 'zZ'}</em>
+                <b>{player.name}</b>
+                <em>
+                  {!alive
+                    ? '☠'
+                    : enabled
+                      ? selected === player.id ? '✓' : '◇'
+                      : ''}
+                </em>
               </button>
             )
           })}
@@ -2707,23 +2714,52 @@ function Night({
           <b>{mobileNightActionLabel}</b>
         </button>
       </section>
-      <aside className="panel role-panel">
+      <aside className={'panel role-panel ' + (nightChatAvailable ? 'with-night-chat' : 'without-night-chat')}>
         <blockquote>“Herkes uyur... Ama gerçekler asla.”</blockquote>
         <h1>Rolün</h1>
-        <div className={'seer-card role-card-' + view.selfRole}><div>{visual.icon}</div><b>{visual.title.toLocaleUpperCase('tr-TR')}</b></div>
-        <section>
-          <h2>{visual.icon} {visual.title}</h2><p>{visual.text}</p>
+        <div className={'seer-card role-card-' + view.selfRole}>
+          <div>{visual.icon}</div>
+          <b>{visual.title.toLocaleUpperCase('tr-TR')}</b>
+        </div>
+        <section className="night-role-copy">
+          <h2>{visual.icon} {visual.title}</h2>
+          <p>{visual.text}</p>
           {view.selfRole === 'vampire' && view.knownVampireIds.length > 0 && (
-            <em>Diğer Vampir: {view.knownVampireIds.map((id) => view.publicPlayers.find((player) => player.id === id)?.name).filter(Boolean).join(', ')}</em>
+            <em>
+              Diğer Vampir: {view.knownVampireIds
+                .map((id) => view.publicPlayers.find((player) => player.id === id)?.name)
+                .filter(Boolean)
+                .join(', ')}
+            </em>
           )}
-          <h3>{action ? 'Hedef Seçimi' : 'Gece Bekleyişi'}</h3>
-          <p>{action ? 'Yalnızca geçerli hedefler seçilebilir.' : 'Özel bir gece aksiyonun yok.'}</p>
-          <div className={'target ' + (picked ? 'active' : '')}><span>{picked?.name[0] ?? '•'}</span><b>{picked?.name ?? (action ? 'Oyuncu seçilmedi' : 'Gece devam ediyor')}</b><em>{visual.icon}</em></div>
+
+          <div className="night-decision">
+            <header>
+              <small>{action ? 'GECE KARARIN' : 'GECE DURUMUN'}</small>
+              <b>{action ? visual.action : 'Bekle'}</b>
+            </header>
+            <p>
+              {action
+                ? picked
+                  ? 'Seçimini aşağıdan onaylayabilirsin.'
+                  : 'Yalnızca geçerli hedefler seçilebilir.'
+                : 'Bu gece özel bir aksiyonun yok.'}
+            </p>
+            <div className={'target ' + (picked ? 'active' : '')}>
+              <span>{picked?.name[0] ?? '•'}</span>
+              <b>{picked?.name ?? (action ? 'Oyuncu seçilmedi' : 'Gece devam ediyor')}</b>
+              <em>{visual.icon}</em>
+            </div>
+            <button className="seer-btn" disabled={!canAct} onClick={onResolve}>
+              {visual.icon} {self?.alive ? visual.action : 'Hayalet Olarak İzle'}
+            </button>
+            <small className="hint">
+              {action
+                ? 'Onaylanmamış hedef süre biterse pas sayılır.'
+                : 'Gece diğer oyuncuların kararlarıyla devam eder.'}
+            </small>
+          </div>
         </section>
-        <button className="seer-btn" disabled={!canAct} onClick={onResolve}>{visual.icon} {self?.alive ? visual.action : 'Hayalet Olarak İzle'}</button>
-        <small className="hint">
-          Gerçek roller diğer oyunculara açıklanmaz. Onaylanmamış hedef süre biterse pas sayılır.
-        </small>
         {nightChatAvailable && (
           <div className="night-chat">
             <ChatPanel
