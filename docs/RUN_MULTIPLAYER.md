@@ -160,3 +160,31 @@ CI now builds the production Docker image, mounts a real host directory at
 against the same volume, and joins the pre-existing room. This catches both
 container boot regressions and persistent-volume permission problems before
 deployment.
+
+
+## Six-client production full-match E2E
+
+`npm run e2e:production -- https://<backend>` drives six independent
+WebSocket sessions through the same public HTTP/WSS interfaces used by real
+players. It does not read server memory or use a test-only endpoint.
+
+The scenario verifies a two-round match:
+
+- six-player lobby create/join, connection presence and ready state
+- secure per-viewer role reveal with the 6-player role-pack counts
+- no public `secretRole` leakage before game end
+- Vampire private chat visibility
+- Vampire / Seer / Protector night commands
+- protection preventing a planned night death
+- Seer private intel
+- public Village chat
+- a structured claim sourced from a real Village message
+- host-driven discussion -> voting transition
+- round-one Villager elimination
+- dead-player Ghost chat plus living-player Ghost privacy
+- second night and discussion
+- final Vampire elimination
+- Village victory and post-game full role reveal consistency
+
+The GitHub Actions workflow `Production Full Match` runs this against the live
+Railway backend on every `main` push and can also be started manually.

@@ -12,7 +12,8 @@
     "server:dev": "tsx server/start.ts",
     "typecheck:server": "tsc -p tsconfig.server.json",
     "server:start": "tsx server/start.ts",
-    "smoke:production": "node scripts/production-smoke.mjs"
+    "smoke:production": "node scripts/production-smoke.mjs",
+    "e2e:production": "node scripts/production-full-match.mjs"
   },
   "dependencies": {
     "react": "^19.1.1",

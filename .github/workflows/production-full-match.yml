@@ -1,0 +1,32 @@
+name: Production Full Match
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-full-match
+  cancel-in-progress: false
+
+jobs:
+  full-match:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Wait briefly for production backend rollout
+        run: sleep 20
+      - name: Play a six-client two-round match against production
+        env:
+          VAMPIRKY_BACKEND_URL: https://vampirky-backend-production.up.railway.app
+          VAMPIRKY_E2E_ORIGIN: https://mehmetyildiz03.github.io
+          VAMPIRKY_E2E_TIMEOUT_MS: 20000
+        run: npm run e2e:production -- "$VAMPIRKY_BACKEND_URL"
