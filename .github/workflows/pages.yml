@@ -26,7 +26,7 @@ jobs:
       - name: Build production client
         run: npm run build
         env:
-          VITE_MULTIPLAYER_HTTP_URL: ${{ vars.VAMPIRKY_MULTIPLAYER_HTTP_URL }}
+          VITE_MULTIPLAYER_HTTP_URL: https://vampirky-backend-production.up.railway.app
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
