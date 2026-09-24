@@ -1563,8 +1563,4 @@
     padding:1px 4px;
     font-size:6px;
   }
-  .network-player-grid.night-ring.players-12 + .network-night-center{
-    width:108px;
-    height:108px;
-  }
 }
