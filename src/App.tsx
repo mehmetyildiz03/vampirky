@@ -139,8 +139,31 @@ function VillageBackdrop() {
   )
 }
 
-function Topbar({ name = 'Ali' }: { name?: string }) {
+function Topbar({
+  name = 'Ali',
+  network = false,
+}: {
+  name?: string
+  network?: boolean
+}) {
   const initial = name.trim().charAt(0).toLocaleUpperCase('tr-TR') || 'A'
+
+  if (network) {
+    return (
+      <header className="topbar network-topbar">
+        <div className="network-topbar-state">
+          <span>●</span>
+          <div><b>Canlı Multiplayer</b><small>Sunucu bağlantılı oturum</small></div>
+        </div>
+        <div className="top-spacer" />
+        <div className="profile network-profile">
+          <span className="avatar small">{initial}</span>
+          <div><b>{name}</b><small>Oyuncu</small></div>
+        </div>
+      </header>
+    )
+  }
+
   return (
     <header className="topbar">
       <button>⚙ <span>Ayarlar</span></button>
@@ -677,7 +700,11 @@ export default function App() {
 
   return (
     <div className={'app phase-' + visualScreen + (screen === 'multiplayer-game' ? ' network-session' : '')}>
-      <VillageBackdrop /><Topbar name={topbarName} />
+      <VillageBackdrop />
+      <Topbar
+        name={topbarName}
+        network={['multiplayer-entry', 'multiplayer-lobby', 'multiplayer-game'].includes(screen)}
+      />
       {screen === 'home' && (
         <Home
           onCreateRoom={() => openMultiplayerEntry('create')}
@@ -976,8 +1003,13 @@ function NetworkLobby({
   onStart: () => void
 }) {
   const self = snapshot.players.find((player) => player.id === playerId)
+  const host = snapshot.players.find((player) => player.id === snapshot.hostPlayerId)
   const isHost = snapshot.hostPlayerId === playerId
-  const counts = snapshot.players.length >= snapshot.minPlayers
+  const hostConnected = host?.connected ?? false
+  const enoughPlayers = snapshot.players.length >= snapshot.minPlayers
+  const missingPlayers = Math.max(0, snapshot.minPlayers - snapshot.players.length)
+  const allPlayersReady = snapshot.players.every((player) => player.ready)
+  const counts = enoughPlayers
     ? countRoles(buildRolePack(snapshot.players.length))
     : null
   const openSlots = Math.max(0, snapshot.maxPlayers - snapshot.players.length)
@@ -995,7 +1027,7 @@ function NetworkLobby({
           <span>●</span>
           <div>
             <b>{connectionState === 'ready' ? 'Sunucuya bağlı' : 'Bağlantı durumu'}</b>
-            <small>{connectionState}</small>
+            <small>{networkConnectionLabel(connectionState)}</small>
           </div>
         </div>
         <Lore />
@@ -1008,8 +1040,13 @@ function NetworkLobby({
         </div>
 
         <div className="lobby-grid">
-          <div>
-            <h3>Oyuncular <small>({snapshot.players.length}/{snapshot.maxPlayers})</small></h3>
+          <div className="network-lobby-players">
+            <div className="network-lobby-player-head">
+              <h3>Oyuncular <small>({snapshot.players.length}/{snapshot.maxPlayers})</small></h3>
+              {!enoughPlayers && (
+                <span>{missingPlayers} oyuncu daha gerekli</span>
+              )}
+            </div>
             <div className="player-list">
               {snapshot.players.map((player) => {
                 const initial = player.name.charAt(0).toLocaleUpperCase('tr-TR')
@@ -1030,42 +1067,56 @@ function NetworkLobby({
                         {player.isHost && <em> ♛</em>}
                         {player.id === playerId && <i> SEN</i>}
                       </b>
-                      <small className={player.ready ? 'ready' : 'not-ready'}>
-                        {player.ready ? '● Hazır' : '● Hazır Değil'}
+                      <small
+                        className={
+                          'network-player-state ' +
+                          (player.connected ? 'online ' : 'offline ') +
+                          (player.ready ? 'ready' : 'not-ready')
+                        }
+                      >
+                        {networkPlayerStateLabel(player.connected, player.ready)}
                       </small>
                     </div>
-                    <span className={'presence ' + (player.connected ? 'online' : 'offline')}>
-                      {player.connected ? '● Bağlı' : '○ Koptu'}
-                    </span>
                   </div>
                 )
               })}
               {openSlots > 0 && (
-                <div className="empty">
-                  ＋ <b>{openSlots} boş oyuncu yeri</b>
-                  <span>Oda kodunu paylaş</span>
+                <div className="empty network-open-slots">
+                  <span>＋</span>
+                  <div>
+                    <b>{openSlots} boş oyuncu yeri</b>
+                    <small>Arkadaşlarını oda koduyla davet edebilirsin.</small>
+                  </div>
                 </div>
               )}
             </div>
 
-            <div className="chat lobby-chat-placeholder">
-              <b>Gerçek Zamanlı Lobi</b>
-              <p>Ready, bağlantı durumu, host yetkisi ve reconnect sunucu tarafından yönetiliyor.</p>
-              <small>Lobi sohbeti ayrı bir sonraki sosyal katman olarak eklenecek.</small>
+            <div className="network-lobby-guide">
+              <span>⌁</span>
+              <div>
+                <b>Oda hazır</b>
+                <p>
+                  Oyuncular hazır olduğunda host oyunu başlatabilir.
+                  Bağlantısı kesilen oyuncular kısa süre içinde aynı koltuğa dönebilir.
+                </p>
+              </div>
             </div>
           </div>
 
-          <div className="settings">
-            <div className="tabs"><button className="active">Oyun Ayarları</button><button>Rol Dağılımı</button></div>
-            <div className="mode">
+          <div className="settings network-settings">
+            <div className="network-settings-title">
+              <div><b>Oyun Ayarları</b><small>{isHost ? 'Bu ayarları sen yönetiyorsun.' : 'Ayarları host yönetir.'}</small></div>
+              <span>{isHost ? '♛ HOST' : 'KİLİTLİ'}</span>
+            </div>
+            <div className="mode network-mode-card">
               <span>🌒</span>
               <div>
-                <small>SERVER AUTHORITATIVE</small>
-                <h2>Klasik Paket</h2>
-                <p>Roller yalnızca host başlattığında sunucuda dağıtılır.</p>
+                <small>SUNUCU KONTROLLÜ</small>
+                <h2>Klasik Oyun</h2>
+                <p>Gizli roller oyun başlatıldığında sunucuda güvenli ve rastgele dağıtılır.</p>
               </div>
             </div>
-            <Setting icon="◆" label="Harita" value="Köy Meydanı" />
+            <StaticSetting icon="◆" label="Harita" value="Köy Meydanı" />
             <DurationSetting
               icon="☀"
               label="Tartışma Süresi"
@@ -1108,20 +1159,41 @@ function NetworkLobby({
                 : 'Süreleri yalnızca host değiştirebilir.'}
             </small>
 
-            <div className="roles">
-              <h3>Rol Dağılımı ({snapshot.players.length} Oyuncu)</h3>
-              <div>
-                <Role icon="🦇" name="Vampir" n={counts ? String(counts.vampire) : '–'} />
-                <Role icon="♙" name="Köylü" n={counts ? String(counts.villager) : '–'} />
-                <Role icon="◉" name="Kâhin" n={counts ? String(counts.seer) : '–'} />
-                <Role icon="⬟" name="Koruyucu" n={counts ? String(counts.protector) : '–'} />
+            {counts ? (
+              <div className="roles network-role-distribution">
+                <h3>Rol Dağılımı ({snapshot.players.length} Oyuncu)</h3>
+                <div>
+                  <Role icon="🦇" name="Vampir" n={String(counts.vampire)} />
+                  <Role icon="♙" name="Köylü" n={String(counts.villager)} />
+                  <Role icon="◉" name="Kâhin" n={String(counts.seer)} />
+                  <Role icon="⬟" name="Koruyucu" n={String(counts.protector)} />
+                </div>
+                <label>Roller oyun başlatılırken sunucuda dağıtılır.</label>
               </div>
-              <label>
-                {counts
-                  ? 'Roller başlatma anında sunucuda güvenli rastgele dağıtılır.'
-                  : `Başlamak için en az ${snapshot.minPlayers} oyuncu gerekir.`}
-              </label>
-            </div>
+            ) : (
+              <div className="network-player-threshold">
+                <div className="network-threshold-copy">
+                  <span>♟</span>
+                  <div>
+                    <b>Oyuncular bekleniyor</b>
+                    <small>
+                      Oyun {snapshot.minPlayers} oyuncuyla açılır · {missingPlayers} kişi daha gerekli
+                    </small>
+                  </div>
+                </div>
+                <div className="network-threshold-track" aria-hidden>
+                  <span
+                    style={{
+                      width: Math.min(
+                        100,
+                        snapshot.players.length / snapshot.minPlayers * 100,
+                      ) + '%',
+                    }}
+                  />
+                </div>
+                <p>Rol dağılımı yeterli oyuncuya ulaşıldığında burada görünecek.</p>
+              </div>
+            )}
 
             {error && <div className="network-error">⚠ {error}</div>}
             <button
@@ -1134,12 +1206,25 @@ function NetworkLobby({
 
             {isHost ? (
               <button className="start" disabled={!snapshot.canStart} onClick={onStart}>
-                {snapshot.canStart ? 'Oyunu Başlat' : 'Tüm Oyuncuları Bekle'} <b>›</b>
+                {snapshot.canStart
+                  ? 'Oyunu Başlat'
+                  : !enoughPlayers
+                    ? `${missingPlayers} Oyuncu Daha Gerekli`
+                    : !allPlayersReady
+                      ? 'Oyuncuların Hazır Olmasını Bekle'
+                      : 'Oyunu Başlat'} <b>›</b>
               </button>
             ) : (
-              <div className="host-wait">
-                <span>♛</span>
-                <div><b>Host oyunu başlatacak</b><small>Hazır durumunu açık tut.</small></div>
+              <div className={'host-wait ' + (!hostConnected ? 'host-offline' : '')}>
+                <span>{hostConnected ? '♛' : '⌁'}</span>
+                <div>
+                  <b>{hostConnected ? 'Host oyunu başlatacak' : 'Hostun bağlantısı bekleniyor'}</b>
+                  <small>
+                    {hostConnected
+                      ? 'Hazır durumunu açık tut.'
+                      : 'Host geri döndüğünde kaldığı yerden devam edebilir.'}
+                  </small>
+                </div>
               </div>
             )}
           </div>
@@ -1222,6 +1307,38 @@ function Lobby({
       </section>
     </main>
   )
+}
+
+function StaticSetting({
+  icon,
+  label,
+  value,
+}: {
+  icon: string
+  label: string
+  value: string
+}) {
+  return (
+    <div className="setting static-setting">
+      <span>{icon}</span>
+      <b>{label}</b>
+      <strong>{value}</strong>
+    </div>
+  )
+}
+
+function networkConnectionLabel(state: ClientConnectionState): string {
+  if (state === 'ready') return 'Bağlantı aktif'
+  if (state === 'connecting') return 'Bağlanıyor…'
+  if (state === 'connected') return 'Oturum doğrulanıyor…'
+  if (state === 'reconnecting') return 'Yeniden bağlanıyor…'
+  if (state === 'closed') return 'Bağlantı kapalı'
+  return 'Hazırlanıyor…'
+}
+
+function networkPlayerStateLabel(connected: boolean, ready: boolean): string {
+  if (!connected) return ready ? '○ Bağlantı kesildi · Hazırdı' : '○ Bağlantı kesildi'
+  return ready ? '● Bağlı · Hazır' : '● Bağlı · Hazır değil'
 }
 
 function Setting({ icon, label, value }: { icon: string; label: string; value: string }) {

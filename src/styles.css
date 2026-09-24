@@ -145,3 +145,79 @@
 
 /* P3.5 — general private notes */
 .network-deduction-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px}.network-deduction-tabs button{padding:7px;border:1px solid #34312d;background:#0d1014;color:#817970;font-size:8px}.network-deduction-tabs button.active{border-color:#84613a;background:#21180f;color:#d9b784}.network-general-notes{margin-top:6px;padding:7px;border:1px solid #34312d;background:#0b0e12;min-height:0}.network-side-tabs{grid-template-columns:repeat(auto-fit,minmax(80px,1fr))}
+
+
+/* P3.6 — production lobby clarity and visual polish */
+.network-topbar .network-topbar-state,
+.network-topbar .network-profile{
+  border:1px solid #7e5b37;
+  background:linear-gradient(#15181ddd,#090b0edd);
+  box-shadow:0 4px 10px #0008,inset 0 0 0 2px #000;
+}
+.network-topbar-state{height:46px;display:flex;align-items:center;gap:9px;padding:6px 12px}
+.network-topbar-state>span{color:#63ba78;text-shadow:0 0 10px #63ba7866}
+.network-topbar-state>div{display:flex;flex-direction:column}
+.network-topbar-state b{font-size:11px;color:#d7c3a4}
+.network-topbar-state small{font-size:8px;color:#80786e}
+.network-profile{min-width:150px}
+.network-profile small{display:block!important}
+.network-lobby .lobby-panel{min-height:0;align-self:start}
+.network-lobby .lobby-grid{align-items:start}
+.network-lobby-players{min-width:0}
+.network-lobby-player-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px}
+.network-lobby-player-head h3{margin:0}
+.network-lobby-player-head>span{padding:4px 7px;border:1px solid #665039;background:#18120d;color:#c5a16e;font-size:8px}
+.network-player{min-height:58px;height:auto}
+.network-player-state{font-size:9px!important}
+.network-player-state.online.ready{color:#68c982!important}
+.network-player-state.online.not-ready{color:#c7a16e!important}
+.network-player-state.offline{color:#7b7771!important}
+.network-open-slots{min-height:58px;height:auto;background:#0c0e11}
+.network-open-slots>span{font-size:18px;color:#8a6a42}
+.network-open-slots>div{display:flex;flex:1;flex-direction:column}
+.network-open-slots small{margin-top:2px;color:#6f6962;font-size:8px}
+.network-lobby-guide{margin-top:10px;display:grid;grid-template-columns:34px 1fr;gap:9px;align-items:start;padding:10px;border:1px solid #37332e;background:#0b0e12}
+.network-lobby-guide>span{width:30px;height:30px;display:grid;place-items:center;border:1px solid #554431;background:#15110e;color:#c29b65}
+.network-lobby-guide b{font-size:11px;color:#d8c2a2}
+.network-lobby-guide p{margin:4px 0 0;color:#7f786f;font-size:9px;line-height:1.45}
+.network-settings{padding:9px}
+.network-settings-title{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 9px;border:1px solid #4b3a28;background:linear-gradient(90deg,#17120e,#0d1014)}
+.network-settings-title>div{display:flex;flex-direction:column}
+.network-settings-title b{font-size:13px;color:#e1c79f}
+.network-settings-title small{margin-top:2px;color:#7d746a;font-size:8px}
+.network-settings-title>span{padding:4px 7px;border:1px solid #725536;background:#20170f;color:#cfa66c;font-size:8px;font-weight:700;letter-spacing:.08em}
+.network-mode-card{grid-template-columns:76px 1fr}
+.network-mode-card>span{font-size:42px}
+.network-mode-card small{color:#ad8756;letter-spacing:.08em}
+.network-mode-card h2{font-size:20px}
+.network-mode-card p{font-size:10px;line-height:1.4}
+.static-setting{grid-template-columns:28px 1fr auto}
+.static-setting strong{text-align:right;color:#d7c2a3}
+.network-player-threshold{margin-top:10px;padding:11px;border:1px solid #5c4932;background:linear-gradient(135deg,#17130f,#0d1013)}
+.network-threshold-copy{display:grid;grid-template-columns:38px 1fr;gap:8px;align-items:center}
+.network-threshold-copy>span{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;border:1px solid #725738;background:#11151a;color:#d0a76b}
+.network-threshold-copy>div{display:flex;flex-direction:column}
+.network-threshold-copy b{color:#dfc6a1}
+.network-threshold-copy small{margin-top:2px;color:#928778;font-size:9px}
+.network-threshold-track{height:5px;margin-top:9px;background:#272019;overflow:hidden}
+.network-threshold-track>span{display:block;height:100%;background:linear-gradient(90deg,#8e6537,#d2aa6b);transition:width .2s}
+.network-player-threshold p{margin:7px 0 0;color:#746d65;font-size:8px}
+.network-role-distribution>div{grid-template-columns:repeat(4,1fr)}
+.network-role-distribution label{font-size:9px;justify-content:center}
+.host-wait.host-offline{border-color:#55483c;background:#121111}
+.host-wait.host-offline>span{color:#887b6e}
+.host-wait.host-offline b{color:#b1a69a}
+.network-lobby .start:disabled{cursor:not-allowed;filter:grayscale(.55);opacity:.62}
+@media(min-width:1101px){
+  .network-lobby{grid-template-columns:minmax(300px,27%) minmax(0,1fr);align-items:start}
+  .network-lobby .lobby-panel{max-width:1220px;width:100%}
+}
+@media(max-width:760px){
+  .network-topbar-state small{display:none}
+  .network-topbar-state{padding:5px 8px}
+  .network-profile{min-width:auto}
+  .network-lobby-player-head{align-items:flex-start}
+  .network-lobby-player-head>span{white-space:nowrap}
+  .network-mode-card{grid-template-columns:58px 1fr}
+  .network-role-distribution>div{grid-template-columns:repeat(2,1fr)}
+}
