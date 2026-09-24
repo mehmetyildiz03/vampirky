@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { DeductionMark } from '../game/deduction'
 import type { ChatChannel, RoleId } from '../game/types'
 import type {
   BrowserMultiplayerClient,
@@ -49,12 +50,18 @@ export function NetworkGame({
   onExit: () => void
 }) {
   const [selectedTarget, setSelectedTarget] = useState<number | null>(null)
-  const [sideTab, setSideTab] = useState<'chat' | 'claims'>('chat')
+  const [sideTab, setSideTab] = useState<'chat' | 'claims' | 'deduction'>('chat')
   const [claimSource, setClaimSource] = useState<{ id: number; text: string } | null>(null)
 
   useEffect(() => {
     setSelectedTarget(null)
-  }, [snapshot.phase, snapshot.round])
+    if (
+      sideTab === 'claims' &&
+      !['discussion', 'voting'].includes(snapshot.phase)
+    ) {
+      setSideTab('chat')
+    }
+  }, [snapshot.phase, snapshot.round, sideTab])
 
   const send = (command: GameCommandInput) => {
     try {
@@ -186,40 +193,38 @@ export function NetworkGame({
             </div>
           )}
 
-          {snapshot.phase === 'discussion' || snapshot.phase === 'voting' ? (
-            <>
-              <div className="network-side-tabs">
-                <button
-                  className={sideTab === 'chat' ? 'active' : ''}
-                  onClick={() => setSideTab('chat')}
-                >
-                  ✉ Sohbet
-                </button>
-                <button
-                  className={sideTab === 'claims' ? 'active' : ''}
-                  onClick={() => setSideTab('claims')}
-                >
-                  ◇ İddialar
-                </button>
-              </div>
-              {sideTab === 'chat' ? (
-                <NetworkChat
-                  snapshot={snapshot}
-                  send={send}
-                  onClaimFromMessage={(id, text) => {
-                    setClaimSource({ id, text })
-                    setSideTab('claims')
-                  }}
-                />
-              ) : (
-                <NetworkClaims
-                  snapshot={snapshot}
-                  send={send}
-                  source={claimSource}
-                  onClearSource={() => setClaimSource(null)}
-                />
-              )}
-            </>
+          <div className="network-side-tabs">
+            <button
+              className={sideTab === 'chat' ? 'active' : ''}
+              onClick={() => setSideTab('chat')}
+            >
+              ✉ Sohbet
+            </button>
+            {(snapshot.phase === 'discussion' || snapshot.phase === 'voting') && (
+              <button
+                className={sideTab === 'claims' ? 'active' : ''}
+                onClick={() => setSideTab('claims')}
+              >
+                ◇ İddialar
+              </button>
+            )}
+            <button
+              className={sideTab === 'deduction' ? 'active' : ''}
+              onClick={() => setSideTab('deduction')}
+            >
+              ⌘ Dedüksiyon
+            </button>
+          </div>
+
+          {sideTab === 'deduction' ? (
+            <NetworkDeduction snapshot={snapshot} client={client} />
+          ) : sideTab === 'claims' && (snapshot.phase === 'discussion' || snapshot.phase === 'voting') ? (
+            <NetworkClaims
+              snapshot={snapshot}
+              send={send}
+              source={claimSource}
+              onClearSource={() => setClaimSource(null)}
+            />
           ) : (
             <NetworkChat
               snapshot={snapshot}
@@ -578,6 +583,154 @@ function NetworkChat({
       )}
     </div>
   )
+}
+
+function NetworkDeduction({
+  snapshot,
+  client,
+}: {
+  snapshot: ViewerGameSnapshot
+  client: BrowserMultiplayerClient
+}) {
+  const candidates = snapshot.players.filter((player) => player.id !== snapshot.self.id)
+  const [selectedPlayerId, setSelectedPlayerId] = useState<number>(
+    candidates[0]?.id ?? snapshot.self.id,
+  )
+  const [note, setNote] = useState('')
+
+  useEffect(() => {
+    if (!candidates.some((player) => player.id === selectedPlayerId) && candidates[0]) {
+      setSelectedPlayerId(candidates[0].id)
+    }
+  }, [snapshot.players.length, selectedPlayerId])
+
+  const selectedPlayer = snapshot.players.find((player) => player.id === selectedPlayerId)
+  const selectedMark = snapshot.privateDeduction.marks[selectedPlayerId] ?? 'uncertain'
+  const notes = snapshot.privateDeduction.notes[selectedPlayerId] ?? []
+
+  const setMark = (mark: DeductionMark) => {
+    try {
+      client.setDeductionMark(selectedPlayerId, mark)
+    } catch {
+      // BrowserMultiplayerClient surfaces transport failures.
+    }
+  }
+
+  const addNote = () => {
+    const normalized = note.trim()
+    if (!normalized) return
+    try {
+      client.addPrivateNote(selectedPlayerId, normalized)
+      setNote('')
+    } catch {
+      // BrowserMultiplayerClient surfaces transport failures.
+    }
+  }
+
+  return (
+    <div className="network-deduction">
+      <header className="network-deduction-head">
+        <small>ÖZEL DEDÜKSİYON DEFTERİ</small>
+        <b>Yalnızca sen görürsün</b>
+        <p>İşaretler ve notlar session’ına özeldir; diğer oyunculara yayınlanmaz.</p>
+      </header>
+
+      <div className="network-deduction-players">
+        {candidates.map((player) => {
+          const mark = snapshot.privateDeduction.marks[player.id] ?? 'uncertain'
+          return (
+            <button
+              key={player.id}
+              className={[
+                player.id === selectedPlayerId ? 'active' : '',
+                'mark-' + mark,
+              ].join(' ')}
+              onClick={() => setSelectedPlayerId(player.id)}
+            >
+              <span>{deductionMarkIcon(mark)}</span>
+              <div>
+                <b>{player.name}</b>
+                <small>{deductionMarkLabel(mark)}</small>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+
+      {selectedPlayer && (
+        <section className="network-deduction-detail">
+          <h3>{selectedPlayer.name}</h3>
+          <div className="network-mark-buttons">
+            {(['suspicious', 'uncertain', 'trusted'] as DeductionMark[]).map((mark) => (
+              <button
+                key={mark}
+                className={selectedMark === mark ? 'active mark-' + mark : 'mark-' + mark}
+                onClick={() => setMark(mark)}
+              >
+                {deductionMarkIcon(mark)} {deductionMarkLabel(mark)}
+              </button>
+            ))}
+          </div>
+
+          <div className="network-private-notes">
+            <div className="network-note-compose">
+              <textarea
+                value={note}
+                maxLength={220}
+                placeholder="Bu oyuncu hakkında özel not…"
+                onChange={(event) => setNote(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault()
+                    addNote()
+                  }
+                }}
+              />
+              <div>
+                <small>{note.length}/220</small>
+                <button disabled={!note.trim()} onClick={addNote}>Not Ekle</button>
+              </div>
+            </div>
+
+            <div className="network-note-list">
+              {notes.length === 0 && <div className="network-empty">Bu oyuncu için özel not yok.</div>}
+              {notes.slice().reverse().map((privateNote) => (
+                <article key={privateNote.id}>
+                  <header>
+                    <small>{privateNote.round}. tur</small>
+                    <button
+                      onClick={() => {
+                        try {
+                          client.removePrivateNote(selectedPlayerId, privateNote.id)
+                        } catch {
+                          // BrowserMultiplayerClient surfaces transport failures.
+                        }
+                      }}
+                    >
+                      Sil
+                    </button>
+                  </header>
+                  <p>{privateNote.text}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+    </div>
+  )
+}
+
+function deductionMarkIcon(mark: DeductionMark): string {
+  if (mark === 'suspicious') return '!'
+  if (mark === 'trusted') return '✓'
+  return '?'
+}
+
+function deductionMarkLabel(mark: DeductionMark): string {
+  if (mark === 'suspicious') return 'Şüpheli'
+  if (mark === 'trusted') return 'Güveniyorum'
+  return 'Kararsızım'
 }
 
 function NetworkClaims({

@@ -53,6 +53,7 @@ type Listener = (event: BrowserClientEvent) => void
 
 type LobbyCommandInput =
   | { type: 'lobby.ready'; ready: boolean }
+  | { type: 'lobby.duration'; key: PhaseDurationKey; seconds: number }
   | { type: 'lobby.start' }
 
 type PrivateCommandInput =

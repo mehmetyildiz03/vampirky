@@ -44,6 +44,56 @@ describe('authoritative multiplayer lobby', () => {
     })
   })
 
+  it('lets only the host change phase durations and resets ready state', () => {
+    const service = new RoomSessionService()
+    const host = service.createLobby('Host', 'TIMING1')
+    const guest = service.joinLobby('TIMING1', 'Guest')
+
+    service.dispatchLobby(host.sessionToken, {
+      type: 'lobby.ready',
+      requestId: 'ready-host',
+      baseRevision: guest.revision,
+      ready: true,
+    })
+    const guestReady = service.dispatchLobby(guest.sessionToken, {
+      type: 'lobby.ready',
+      requestId: 'ready-guest',
+      baseRevision: guest.revision,
+      ready: true,
+    })
+
+    const rejected = service.dispatchLobby(guest.sessionToken, {
+      type: 'lobby.duration',
+      requestId: 'guest-duration',
+      baseRevision: guestReady.response.revision,
+      key: 'night',
+      seconds: 70,
+    })
+    expect(rejected.response).toMatchObject({
+      type: 'command.rejected',
+      code: 'not_authorized',
+    })
+
+    const changed = service.dispatchLobby(host.sessionToken, {
+      type: 'lobby.duration',
+      requestId: 'host-duration',
+      baseRevision: guestReady.response.revision,
+      key: 'night',
+      seconds: 70,
+    })
+    expect(changed.response.type).toBe('command.accepted')
+    expect(changed.message).toMatchObject({
+      type: 'lobby.snapshot',
+      snapshot: {
+        phaseDurations: { night: 70 },
+        players: [
+          expect.objectContaining({ ready: false }),
+          expect.objectContaining({ ready: false }),
+        ],
+      },
+    })
+  })
+
   it('keeps the same host session token across lobby to game transition', () => {
     const service = new RoomSessionService()
     const host = service.createLobby('Host', 'START1')

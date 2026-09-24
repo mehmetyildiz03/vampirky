@@ -703,6 +703,7 @@ export default function App() {
           error={multiplayerError}
           onBack={leaveMultiplayerView}
           onReady={(ready) => multiplayerClient.setReady(ready)}
+          onDurationChange={(key, seconds) => multiplayerClient.setPhaseDuration(key, seconds)}
           onStart={() => multiplayerClient.startGame()}
         />
       )}
@@ -962,6 +963,7 @@ function NetworkLobby({
   error,
   onBack,
   onReady,
+  onDurationChange,
   onStart,
 }: {
   snapshot: LobbySnapshot
@@ -970,6 +972,7 @@ function NetworkLobby({
   error: string
   onBack: () => void
   onReady: (ready: boolean) => void
+  onDurationChange: (key: PhaseDurationKey, seconds: number) => void
   onStart: () => void
 }) {
   const self = snapshot.players.find((player) => player.id === playerId)
@@ -1063,9 +1066,47 @@ function NetworkLobby({
               </div>
             </div>
             <Setting icon="◆" label="Harita" value="Köy Meydanı" />
-            <Setting icon="☀" label="Tartışma" value="90 sn" />
-            <Setting icon="☾" label="Gece" value="40 sn" />
-            <Setting icon="🗳" label="Oylama" value="30 sn" />
+            <DurationSetting
+              icon="☀"
+              label="Tartışma Süresi"
+              value={snapshot.phaseDurations.discussion}
+              disabled={!isHost}
+              onChange={(direction) =>
+                onDurationChange(
+                  'discussion',
+                  adjustPhaseDuration('discussion', snapshot.phaseDurations.discussion, direction),
+                )
+              }
+            />
+            <DurationSetting
+              icon="☾"
+              label="Gece Süresi"
+              value={snapshot.phaseDurations.night}
+              disabled={!isHost}
+              onChange={(direction) =>
+                onDurationChange(
+                  'night',
+                  adjustPhaseDuration('night', snapshot.phaseDurations.night, direction),
+                )
+              }
+            />
+            <DurationSetting
+              icon="🗳"
+              label="Oylama Süresi"
+              value={snapshot.phaseDurations.voting}
+              disabled={!isHost}
+              onChange={(direction) =>
+                onDurationChange(
+                  'voting',
+                  adjustPhaseDuration('voting', snapshot.phaseDurations.voting, direction),
+                )
+              }
+            />
+            <small className="network-setting-note">
+              {isHost
+                ? 'Ayar değişirse tüm oyuncular yeniden Hazır demelidir.'
+                : 'Süreleri yalnızca host değiştirebilir.'}
+            </small>
 
             <div className="roles">
               <h3>Rol Dağılımı ({snapshot.players.length} Oyuncu)</h3>
@@ -1192,19 +1233,21 @@ function DurationSetting({
   label,
   value,
   onChange,
+  disabled = false,
 }: {
   icon: string
   label: string
   value: number
   onChange: (direction: -1 | 1) => void
+  disabled?: boolean
 }) {
   return (
     <div className="setting duration-setting">
       <span>{icon}</span>
       <b>{label}</b>
-      <button aria-label={label + ' azalt'} onClick={() => onChange(-1)}>‹</button>
+      <button disabled={disabled} aria-label={label + ' azalt'} onClick={() => onChange(-1)}>‹</button>
       <strong>{value} sn</strong>
-      <button aria-label={label + ' artır'} onClick={() => onChange(1)}>›</button>
+      <button disabled={disabled} aria-label={label + ' artır'} onClick={() => onChange(1)}>›</button>
     </div>
   )
 }

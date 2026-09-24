@@ -76,6 +76,82 @@ describe('room session service', () => {
     expect(retry.snapshot.chatMessages).toHaveLength(1)
   })
 
+  it('keeps private deductions session-scoped and restores them on reconnect', () => {
+    const game = discussionGame()
+    const service = new RoomSessionService()
+    const host = service.createRoom(game, game.players[0].id, 'PRIVATE1')
+    const guest = service.claimSeat('PRIVATE1', game.players[1].id)
+
+    const mark = service.dispatchPrivate(host.sessionToken, {
+      type: 'deduction.mark',
+      requestId: 'mark-guest',
+      baseRevision: 0,
+      targetId: guest.playerId,
+      mark: 'suspicious',
+    })
+    expect(mark.response).toMatchObject({
+      type: 'command.accepted',
+      revision: 0,
+    })
+    expect(mark.broadcasts).toHaveLength(1)
+    expect(mark.broadcasts[0].sessionToken).toBe(host.sessionToken)
+
+    const note = service.dispatchPrivate(host.sessionToken, {
+      type: 'deduction.note.add',
+      requestId: 'note-guest',
+      baseRevision: 0,
+      targetId: guest.playerId,
+      text: 'Rol iddiasını değiştirdi.',
+    })
+    expect(note.message).toMatchObject({
+      type: 'game.snapshot',
+      snapshot: {
+        privateDeduction: {
+          marks: { [guest.playerId]: 'suspicious' },
+        },
+      },
+    })
+
+    const guestSnapshot = service.snapshotForSession(guest.sessionToken)
+    expect(guestSnapshot.privateDeduction.marks[host.playerId]).toBe('uncertain')
+    expect(JSON.stringify(guestSnapshot)).not.toContain('Rol iddiasını değiştirdi.')
+
+    const resumed = service.resumeSession('PRIVATE1', host.sessionToken, 0)
+    expect(resumed.message).toMatchObject({
+      type: 'game.snapshot',
+      snapshot: {
+        privateDeduction: {
+          notes: {
+            [guest.playerId]: [
+              expect.objectContaining({ text: 'Rol iddiasını değiştirdi.' }),
+            ],
+          },
+        },
+      },
+    })
+  })
+
+  it('rejects oversized private notes without changing public revision', () => {
+    const game = discussionGame()
+    const service = new RoomSessionService()
+    const host = service.createRoom(game, game.players[0].id, 'PRIVATE2')
+    const guest = service.claimSeat('PRIVATE2', game.players[1].id)
+
+    const result = service.dispatchPrivate(host.sessionToken, {
+      type: 'deduction.note.add',
+      requestId: 'too-long',
+      baseRevision: 0,
+      targetId: guest.playerId,
+      text: 'x'.repeat(221),
+    })
+
+    expect(result.response).toMatchObject({
+      type: 'command.rejected',
+      code: 'invalid_payload',
+      revision: 0,
+    })
+  })
+
   it('broadcasts a separately scoped game snapshot for every claimed session', () => {
     const game = discussionGame()
     const service = new RoomSessionService()
