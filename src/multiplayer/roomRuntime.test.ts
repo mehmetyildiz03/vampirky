@@ -109,6 +109,47 @@ describe('authoritative multiplayer room runtime', () => {
     })
   })
 
+  it('serializes and restores revision, ready state, timing, and secret game state', () => {
+    const game = createGame(seeds(6))
+    const room = new AuthoritativeRoom(
+      game,
+      4,
+      game.players[0].id,
+      10_000,
+      { discussion: 120, night: 70, voting: 45 },
+    )
+
+    const ready = room.dispatch(game.players[0].id, {
+      type: 'phase.ready',
+      requestId: 'persist-ready',
+      baseRevision: 4,
+    }, 11_000)
+    expect(ready.response.type).toBe('command.accepted')
+
+    const deadline = room.getPhaseDeadlineAt()
+    const persisted = room.exportPersistedState()
+    const restored = AuthoritativeRoom.restore(persisted)
+    const snapshot = restored.snapshotFor(game.players[0].id)
+
+    expect(restored.getRevision()).toBe(5)
+    expect(restored.getPhaseDeadlineAt()).toBe(deadline)
+    expect(snapshot).toMatchObject({
+      phase: 'role_reveal',
+      revision: 5,
+      phaseReadyCount: 1,
+      phaseReadyRequired: 6,
+      self: {
+        id: game.players[0].id,
+        role: game.players[0].secretRole,
+      },
+    })
+    expect(restored.exportPersistedState().phaseDurations).toEqual({
+      discussion: 120,
+      night: 70,
+      voting: 45,
+    })
+  })
+
   it('lets only the host end discussion early', () => {
     let game = beginNight(createGame(seeds(6)))
     game = resolveNight(game)

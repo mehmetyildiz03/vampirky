@@ -185,6 +185,111 @@ describe('room session service', () => {
     })
   })
 
+  it('exports and restores sessions, private state, and request idempotency', () => {
+    const game = discussionGame()
+    const service = new RoomSessionService()
+    const host = service.createRoom(game, game.players[0].id, 'RESTORE1')
+    const guest = service.claimSeat('RESTORE1', game.players[1].id)
+
+    const command = {
+      type: 'chat.send' as const,
+      requestId: 'persist-chat',
+      baseRevision: 0,
+      channel: 'village' as const,
+      text: 'Restart sonrası tek kez görünmeli.',
+    }
+    const first = service.dispatch(host.sessionToken, command)
+    expect(first.response).toMatchObject({
+      type: 'command.accepted',
+      revision: 1,
+    })
+
+    service.dispatchPrivate(host.sessionToken, {
+      type: 'deduction.general.add',
+      requestId: 'persist-private-note',
+      baseRevision: 1,
+      text: 'Bu not yalnızca host oturumunda kalmalı.',
+    })
+
+    const persisted = service.exportPersistedState()
+    const restored = new RoomSessionService()
+    restored.restorePersistedState(structuredClone(persisted))
+
+    const resumed = restored.resumeSession(
+      'RESTORE1',
+      host.sessionToken,
+      1,
+    )
+    expect(resumed).toMatchObject({
+      roomId: 'RESTORE1',
+      playerId: host.playerId,
+      revision: 1,
+      caughtUp: true,
+    })
+    expect(resumed.message).toMatchObject({
+      type: 'game.snapshot',
+      snapshot: {
+        chatMessages: [
+          expect.objectContaining({ text: 'Restart sonrası tek kez görünmeli.' }),
+        ],
+        privateDeduction: {
+          generalNotes: [
+            expect.objectContaining({
+              text: 'Bu not yalnızca host oturumunda kalmalı.',
+            }),
+          ],
+        },
+      },
+    })
+
+    const guestSnapshot = restored.snapshotForSession(guest.sessionToken)
+    expect(JSON.stringify(guestSnapshot))
+      .not.toContain('Bu not yalnızca host oturumunda kalmalı.')
+
+    const retry = restored.dispatch(host.sessionToken, command)
+    expect(retry.response).toEqual(first.response)
+    expect(retry.mutated).toBe(false)
+    expect(retry.snapshot.chatMessages).toHaveLength(1)
+
+    const privateRetry = restored.dispatchPrivate(host.sessionToken, {
+      type: 'deduction.general.add',
+      requestId: 'persist-private-note',
+      baseRevision: 1,
+      text: 'Bu not yalnızca host oturumunda kalmalı.',
+    })
+    expect(privateRetry.mutated).toBe(false)
+    if (privateRetry.message.type === 'game.snapshot') {
+      expect(privateRetry.message.snapshot.privateDeduction.generalNotes)
+        .toHaveLength(1)
+    }
+  })
+
+  it('restores lobby players as disconnected after a process restart', () => {
+    const service = new RoomSessionService()
+    const host = service.createLobby('Host', 'LOBBYR')
+    service.setSessionConnected(host.sessionToken, true)
+
+    const restored = new RoomSessionService()
+    restored.restorePersistedState(service.exportPersistedState())
+    const resumed = restored.resumeSession(
+      host.roomId,
+      host.sessionToken,
+      host.revision,
+    )
+
+    expect(resumed.message).toMatchObject({
+      type: 'lobby.snapshot',
+      snapshot: {
+        players: [
+          expect.objectContaining({
+            id: host.playerId,
+            connected: false,
+          }),
+        ],
+      },
+    })
+  })
+
   it('broadcasts a separately scoped game snapshot for every claimed session', () => {
     const game = discussionGame()
     const service = new RoomSessionService()

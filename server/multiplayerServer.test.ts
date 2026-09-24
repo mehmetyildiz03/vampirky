@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import WebSocket from 'ws'
 import { beginDiscussion, beginNight, createGame, resolveNight } from '../src/game/engine'
@@ -312,6 +315,117 @@ describe('real websocket multiplayer adapter', () => {
     })
 
     socket.close()
+  })
+
+  it('restores an active match and the same session token after a real server restart', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'vampirky-restart-'))
+    const persistencePath = join(directory, 'rooms.json')
+
+    try {
+      running = await createMultiplayerServer({
+        port: 0,
+        allowedOrigins: ['*'],
+        persistencePath,
+      }).listen()
+
+      const createResponse = await fetch(running.httpUrl + '/api/rooms', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          players: seeds(6),
+          hostPlayerId: 1,
+          roomId: 'RESTART1',
+        }),
+      })
+      const host = await createResponse.json() as {
+        roomId: string
+        playerId: number
+        sessionToken: string
+        revision: number
+      }
+
+      const privateNote = running.sessions.dispatchPrivate(host.sessionToken, {
+        type: 'deduction.general.add',
+        requestId: 'restart-private',
+        baseRevision: 0,
+        text: 'Restart sonrasında geri gelmeli.',
+      })
+      expect(privateNote.response.type).toBe('command.accepted')
+
+      const ready = running.sessions.dispatchGame(host.sessionToken, {
+        type: 'phase.ready',
+        requestId: 'restart-ready',
+        baseRevision: 0,
+      })
+      expect(ready.response).toMatchObject({
+        type: 'command.accepted',
+        revision: 1,
+      })
+      if (ready.message.type !== 'game.snapshot') {
+        throw new Error('game snapshot expected before restart')
+      }
+      const deadlineBeforeRestart = ready.message.snapshot.phaseDeadlineAt
+
+      await running.close()
+      running = null
+
+      running = await createMultiplayerServer({
+        port: 0,
+        allowedOrigins: ['*'],
+        persistencePath,
+      }).listen()
+
+      const socket = await openSocket(running.websocketUrl)
+      const reconnectFrames = nextMessages(socket, 2)
+      socket.send(JSON.stringify({
+        type: 'session.resume',
+        roomId: host.roomId,
+        sessionToken: host.sessionToken,
+        lastSeenRevision: 1,
+      }))
+
+      const [sessionReady, restoredSnapshot] = await reconnectFrames
+      expect(sessionReady).toMatchObject({
+        type: 'session.ready',
+        roomId: 'RESTART1',
+        playerId: host.playerId,
+        revision: 1,
+        caughtUp: true,
+      })
+      expect(restoredSnapshot).toMatchObject({
+        type: 'game.snapshot',
+        revision: 1,
+        snapshot: {
+          phase: 'role_reveal',
+          phaseReadyCount: 1,
+          phaseDeadlineAt: deadlineBeforeRestart,
+          privateDeduction: {
+            generalNotes: [
+              expect.objectContaining({
+                text: 'Restart sonrasında geri gelmeli.',
+              }),
+            ],
+          },
+        },
+      })
+
+      const duplicate = running.sessions.dispatchGame(host.sessionToken, {
+        type: 'phase.ready',
+        requestId: 'restart-ready',
+        baseRevision: 0,
+      })
+      expect(duplicate.response).toEqual(ready.response)
+      expect(duplicate.mutated).toBe(false)
+      if (duplicate.message.type === 'game.snapshot') {
+        expect(duplicate.message.snapshot.phaseReadyCount).toBe(1)
+      }
+
+      socket.close()
+    } finally {
+      await running?.close()
+      running = null
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   it('keeps legacy active-game bootstrap endpoints for integration tooling', async () => {

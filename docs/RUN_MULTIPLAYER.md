@@ -58,3 +58,32 @@ Multiplayer deduction marks and per-player notes are stored per authenticated se
 ## Lobby timing configuration
 
 The host can configure discussion, night, and voting durations within the same validated ranges used by the local demo. The authoritative runtime receives the selected values when the game starts. Any timing change clears all players' ready state so settings cannot be changed silently after everyone has confirmed readiness.
+
+
+## Restart recovery and persistence
+
+The default multiplayer server now persists room state to
+`.data/vampirky-state.json`. Override the location with
+`VAMPIRKY_STATE_FILE`.
+
+Persisted data includes active authoritative game state, lobby settings,
+revisions, server phase deadlines, ready confirmations, opaque session tokens,
+accepted request IDs for idempotent retries, and player-private deduction data.
+Lobby connection presence is intentionally **not** persisted; every player starts
+offline after a process restart until their WebSocket session reconnects.
+
+Writes use a temporary file followed by an atomic rename. The state file and its
+directory are created with restrictive filesystem permissions where supported.
+The server flushes queued writes during graceful shutdown and restores state
+before it begins listening for clients. If a server-owned phase deadline expired
+while the process was offline, startup immediately applies the overdue phase
+transition.
+
+The persistence file contains sensitive material: session tokens, secret roles,
+private role intel, and private deduction notes. Keep it outside source control,
+back it with a private durable volume, and do not serve it as a static asset.
+
+This JSON store is designed for a **single authoritative server process**. Do
+not mount the same file for multiple concurrent server instances. Horizontal
+scaling will require a transactional shared store/room coordinator rather than
+a shared JSON file.
