@@ -18,6 +18,32 @@ describe('authoritative multiplayer lobby', () => {
     expect(JSON.stringify(guest.snapshot)).not.toContain('secretRole')
   })
 
+  it('accepts simultaneous ready commands from the same lobby revision', () => {
+    const service = new RoomSessionService()
+    const host = service.createLobby('Host', 'CONCUR')
+    const guest = service.joinLobby('CONCUR', 'Guest')
+    const baseRevision = guest.revision
+
+    const hostReady = service.dispatchLobby(host.sessionToken, {
+      type: 'lobby.ready',
+      requestId: 'host-ready',
+      baseRevision,
+      ready: true,
+    })
+    const guestReady = service.dispatchLobby(guest.sessionToken, {
+      type: 'lobby.ready',
+      requestId: 'guest-ready',
+      baseRevision,
+      ready: true,
+    })
+
+    expect(hostReady.response.type).toBe('command.accepted')
+    expect(guestReady.response).toMatchObject({
+      type: 'command.accepted',
+      revision: baseRevision + 2,
+    })
+  })
+
   it('keeps the same host session token across lobby to game transition', () => {
     const service = new RoomSessionService()
     const host = service.createLobby('Host', 'START1')

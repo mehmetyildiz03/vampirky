@@ -39,20 +39,51 @@ describe('authoritative multiplayer room runtime', () => {
     })
     expect(room.getRevision()).toBe(1)
 
-    const stale = room.dispatch(player.id, {
+    const impossibleFuture = room.dispatch(player.id, {
       type: 'chat.send',
       requestId: 'chat-2',
-      baseRevision: 0,
+      baseRevision: 5,
       channel: 'village',
-      text: 'Bu stale olmalı.',
+      text: 'Gelecek revision reddedilmeli.',
     })
 
-    expect(stale.response).toMatchObject({
+    expect(impossibleFuture.response).toMatchObject({
       type: 'command.rejected',
       code: 'stale_revision',
       revision: 1,
     })
     expect(room.getRevision()).toBe(1)
+  })
+
+  it('accepts concurrent commands that started from the same older snapshot', () => {
+    let game = beginNight(createGame(seeds(6)))
+    game = resolveNight(game)
+    game = beginDiscussion(game)
+    const room = new AuthoritativeRoom(game)
+    const [a, b] = game.players.filter((player) => player.alive)
+
+    const first = room.dispatch(a.id, {
+      type: 'chat.send',
+      requestId: 'concurrent-a',
+      baseRevision: 0,
+      channel: 'village',
+      text: 'A',
+    })
+    const second = room.dispatch(b.id, {
+      type: 'chat.send',
+      requestId: 'concurrent-b',
+      baseRevision: 0,
+      channel: 'village',
+      text: 'B',
+    })
+
+    expect(first.response.type).toBe('command.accepted')
+    expect(second.response).toMatchObject({
+      type: 'command.accepted',
+      revision: 2,
+    })
+    expect(second.snapshot.chatMessages.map((message) => message.text))
+      .toEqual(['A', 'B'])
   })
 
   it('moves role reveal to night when every player confirms ready', () => {

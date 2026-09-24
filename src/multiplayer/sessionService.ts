@@ -351,13 +351,13 @@ export class RoomSessionService {
       }
     }
 
-    if (command.baseRevision !== lobby.revision) {
+    if (command.baseRevision > lobby.revision) {
       return this.rejectRoomCommand(
         room,
         session,
         command.requestId,
         'stale_revision',
-        'Client revision is stale. Refresh the lobby snapshot before retrying.',
+        'Client revision is ahead of the authoritative lobby.',
       )
     }
 

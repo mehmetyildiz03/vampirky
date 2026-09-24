@@ -94,12 +94,12 @@ export class AuthoritativeRoom {
     command: ClientGameCommand,
     now = Date.now(),
   ): CommandDispatchResult {
-    if (command.baseRevision !== this.revision) {
+    if (command.baseRevision > this.revision) {
       return this.reject(
         playerId,
         command.requestId,
         'stale_revision',
-        'Client revision is stale. Refresh the viewer snapshot before retrying.',
+        'Client revision is ahead of the authoritative room.',
       )
     }
 
