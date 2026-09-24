@@ -101,6 +101,12 @@ function isClientPrivateCommand(value: unknown): value is ClientPrivateCommand {
   if (value.type === 'deduction.note.remove') {
     return isNonNegativeInteger(value.targetId) && isNonNegativeInteger(value.noteId)
   }
+  if (value.type === 'deduction.general.add') {
+    return isString(value.text)
+  }
+  if (value.type === 'deduction.general.remove') {
+    return isNonNegativeInteger(value.noteId)
+  }
   return false
 }
 

@@ -60,6 +60,8 @@ type PrivateCommandInput =
   | { type: 'deduction.mark'; targetId: number; mark: DeductionMark }
   | { type: 'deduction.note.add'; targetId: number; text: string }
   | { type: 'deduction.note.remove'; targetId: number; noteId: number }
+  | { type: 'deduction.general.add'; text: string }
+  | { type: 'deduction.general.remove'; noteId: number }
 
 type StripCommandMeta<T> = T extends { requestId: string; baseRevision: number }
   ? Omit<T, 'requestId' | 'baseRevision'>
@@ -228,6 +230,14 @@ export class BrowserMultiplayerClient {
 
   removePrivateNote(targetId: number, noteId: number): string {
     return this.sendPrivateCommand({ type: 'deduction.note.remove', targetId, noteId })
+  }
+
+  addGeneralPrivateNote(text: string): string {
+    return this.sendPrivateCommand({ type: 'deduction.general.add', text })
+  }
+
+  removeGeneralPrivateNote(noteId: number): string {
+    return this.sendPrivateCommand({ type: 'deduction.general.remove', noteId })
   }
 
   markPhaseReady(): string {

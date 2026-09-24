@@ -104,6 +104,14 @@ export type ClientPrivateCommand =
       targetId: number
       noteId: number
     })
+  | (CommandMeta & {
+      type: 'deduction.general.add'
+      text: string
+    })
+  | (CommandMeta & {
+      type: 'deduction.general.remove'
+      noteId: number
+    })
 
 export interface LobbyPlayerSnapshot {
   id: number

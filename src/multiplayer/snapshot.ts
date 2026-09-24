@@ -1,4 +1,8 @@
-import type { DeductionMark, PrivatePlayerNote } from '../game/deduction'
+import type {
+  DeductionMark,
+  PrivateGeneralNote,
+  PrivatePlayerNote,
+} from '../game/deduction'
 import {
   getChatAccess,
   getPrivatePlayerView,
@@ -24,6 +28,7 @@ import type {
 export interface ViewerPrivateDeductionSnapshot {
   marks: Record<number, DeductionMark>
   notes: Record<number, PrivatePlayerNote[]>
+  generalNotes: PrivateGeneralNote[]
 }
 
 export interface ViewerSelfSnapshot {
@@ -195,6 +200,7 @@ export function createViewerSnapshot(
     privateDeduction: {
       marks: {},
       notes: {},
+      generalNotes: [],
     },
     capabilities: buildCapabilities(state, viewerId, runtime),
     revealedRoles:

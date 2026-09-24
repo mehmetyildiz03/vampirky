@@ -1,7 +1,9 @@
 import { createGame } from '../game/engine'
 import {
+  addPrivateGeneralNote,
   addPrivatePlayerNote,
   createPrivateDeductionState,
+  removePrivateGeneralNote,
   removePrivatePlayerNote,
   setDeductionMark,
   type PrivateDeductionState,
@@ -51,6 +53,7 @@ interface LobbyRecord {
   hostPlayerId: number
   nextPlayerId: number
   revision: number
+  settingsRevision: number
   phaseDurations: PhaseDurations
   players: LobbyPlayerRecord[]
 }
@@ -171,6 +174,7 @@ export class RoomSessionService {
       hostPlayerId,
       nextPlayerId: 2,
       revision: 0,
+      settingsRevision: 0,
       phaseDurations: { ...PHASE_DURATIONS_SECONDS },
       players: [{
         id: hostPlayerId,
@@ -381,6 +385,15 @@ export class RoomSessionService {
     }
 
     if (command.type === 'lobby.ready') {
+      if (command.baseRevision < lobby.settingsRevision) {
+        return this.rejectRoomCommand(
+          room,
+          session,
+          command.requestId,
+          'stale_revision',
+          'Lobby settings changed. Confirm readiness again from the latest snapshot.',
+        )
+      }
       const player = lobby.players.find((candidate) => candidate.id === session.playerId)!
       player.ready = command.ready
       lobby.revision += 1
@@ -423,6 +436,7 @@ export class RoomSessionService {
         ready: false,
       }))
       lobby.revision += 1
+      lobby.settingsRevision = lobby.revision
       const accepted = this.accept(command.requestId, lobby.revision)
       session.acceptedRequests.set(command.requestId, accepted)
       return {
@@ -524,7 +538,10 @@ export class RoomSessionService {
     }
 
     const playerIds = room.playerIds
-    if (!playerIds.has(command.targetId) || command.targetId === session.playerId) {
+    if (
+      'targetId' in command &&
+      (!playerIds.has(command.targetId) || command.targetId === session.playerId)
+    ) {
       return this.rejectRoomCommand(
         room,
         session,
@@ -557,10 +574,31 @@ export class RoomSessionService {
         room.runtime.snapshotFor(session.playerId).round,
         normalized,
       )
-    } else {
+    } else if (command.type === 'deduction.note.remove') {
       session.privateDeduction = removePrivatePlayerNote(
         session.privateDeduction,
         command.targetId,
+        command.noteId,
+      )
+    } else if (command.type === 'deduction.general.add') {
+      const normalized = command.text.trim()
+      if (!normalized || normalized.length > 240) {
+        return this.rejectRoomCommand(
+          room,
+          session,
+          command.requestId,
+          'invalid_payload',
+          'General private notes must contain 1 to 240 characters.',
+        )
+      }
+      session.privateDeduction = addPrivateGeneralNote(
+        session.privateDeduction,
+        room.runtime.snapshotFor(session.playerId).round,
+        normalized,
+      )
+    } else {
+      session.privateDeduction = removePrivateGeneralNote(
+        session.privateDeduction,
         command.noteId,
       )
     }
@@ -751,8 +789,9 @@ export class RoomSessionService {
               notes.map((note) => ({ ...note })),
             ]),
           ),
+          generalNotes: state.generalNotes.map((note) => ({ ...note })),
         }
-      : { marks: {}, notes: {} }
+      : { marks: {}, notes: {}, generalNotes: [] }
 
     return {
       ...snapshot,
