@@ -662,7 +662,7 @@ function VoteActionBar({
   }
 
   return (
-    <div className="network-action-bar vote">
+    <div className="network-action-bar network-vote-action">
       <div>
         <small>OYUNU KULLAN</small>
         <b>{selectedTarget === null ? 'Köyden gönderilecek oyuncuyu seç' : playerName(snapshot, selectedTarget)}</b>
