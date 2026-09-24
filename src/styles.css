@@ -1603,3 +1603,11 @@
     min-height:44px;
   }
 }
+
+
+/* P3.16 — keep desktop Voting controls inside short viewports */
+@media(min-width:961px){
+  .network-game-voting .network-council{
+    min-height:0;
+  }
+}
