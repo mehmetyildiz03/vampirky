@@ -56,7 +56,6 @@ export interface RevealedRole {
 
 export interface ViewerRuntimeMeta {
   serverNow: number
-  serverNow: number
   hostPlayerId: number
   phaseDeadlineAt: number | null
   phaseDurationSeconds: number | null
@@ -67,6 +66,7 @@ export interface ViewerRuntimeMeta {
 export interface ViewerGameSnapshot {
   revision: number
   gameId: string
+  serverNow: number
   phase: GamePhase
   round: number
   winner: Winner
