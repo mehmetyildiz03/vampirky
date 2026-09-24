@@ -34,7 +34,7 @@ function discussionGame() {
 }
 
 describe('room transport gateway', () => {
-  it('binds a peer by session token and sends a fresh scoped snapshot', () => {
+  it('binds a game peer by session token and sends a fresh scoped snapshot', () => {
     const game = discussionGame()
     const service = new RoomSessionService()
     const session = service.createRoom(game, game.players[0].id, 'GATE01')
@@ -56,6 +56,32 @@ describe('room transport gateway', () => {
     expect(peer.messages[1]).toMatchObject({
       type: 'game.snapshot',
       revision: 0,
+    })
+  })
+
+  it('binds a lobby peer and broadcasts presence without changing revision', () => {
+    const service = new RoomSessionService()
+    const session = service.createLobby('Host', 'LOBBYG')
+    const gateway = new RoomGateway(service)
+    const peer = new FakePeer('host-peer')
+
+    gateway.receive(peer, {
+      type: 'session.resume',
+      roomId: session.roomId,
+      sessionToken: session.sessionToken,
+      lastSeenRevision: 0,
+    })
+
+    expect(peer.messages[0]).toMatchObject({
+      type: 'session.ready',
+      revision: 0,
+    })
+    expect(peer.messages[1]).toMatchObject({
+      type: 'lobby.snapshot',
+      revision: 0,
+      snapshot: {
+        players: [expect.objectContaining({ connected: true })],
+      },
     })
   })
 
@@ -84,7 +110,7 @@ describe('room transport gateway', () => {
     expect(newPeer.messages.at(-1)?.type).toBe('game.snapshot')
   })
 
-  it('broadcasts viewer-specific snapshots after an accepted command', () => {
+  it('broadcasts viewer-specific snapshots after an accepted game command', () => {
     const game = discussionGame()
     const service = new RoomSessionService()
     const a = service.createRoom(game, game.players[0].id, 'GATE03')
@@ -134,19 +160,18 @@ describe('room transport gateway', () => {
     })
   })
 
-  it('does not accept game commands before session resume', () => {
+  it('does not accept commands before session resume', () => {
     const service = new RoomSessionService()
     const gateway = new RoomGateway(service)
     const peer = new FakePeer('anonymous')
 
     gateway.receive(peer, {
-      type: 'game.command',
+      type: 'lobby.command',
       command: {
-        type: 'chat.send',
+        type: 'lobby.ready',
         requestId: 'bad',
         baseRevision: 0,
-        channel: 'village',
-        text: 'Yetkisiz.',
+        ready: true,
       },
     })
 

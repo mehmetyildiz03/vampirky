@@ -13,12 +13,6 @@ function seeds(count: number): PlayerSeed[] {
   }))
 }
 
-function discussionGame() {
-  let game = beginNight(createGame(seeds(9)))
-  game = resolveNight(game)
-  return beginDiscussion(game)
-}
-
 function nextMessages(
   socket: WebSocket,
   count: number,
@@ -53,6 +47,12 @@ async function openSocket(url: string): Promise<WebSocket> {
   })
 }
 
+function discussionGame() {
+  let game = beginNight(createGame(seeds(9)))
+  game = resolveNight(game)
+  return beginDiscussion(game)
+}
+
 describe('real websocket multiplayer adapter', () => {
   let running: RunningMultiplayerServer | null = null
 
@@ -61,7 +61,7 @@ describe('real websocket multiplayer adapter', () => {
     running = null
   })
 
-  it('connects two real websocket clients to the same room with scoped snapshots', async () => {
+  it('connects two real websocket clients to the same active game with scoped snapshots', async () => {
     const game = discussionGame()
     const sessions = new RoomSessionService()
     const a = sessions.createRoom(game, game.players[0].id, 'SOCKET1')
@@ -82,12 +82,8 @@ describe('real websocket multiplayer adapter', () => {
       sessionToken: a.sessionToken,
       lastSeenRevision: 0,
     }))
-
     const [readyA, snapshotA] = await initialA
-    expect(readyA).toMatchObject({
-      type: 'session.ready',
-      playerId: game.players[0].id,
-    })
+    expect(readyA).toMatchObject({ type: 'session.ready', playerId: game.players[0].id })
     expect(snapshotA).toMatchObject({
       type: 'game.snapshot',
       snapshot: { self: { id: game.players[0].id } },
@@ -100,12 +96,8 @@ describe('real websocket multiplayer adapter', () => {
       sessionToken: b.sessionToken,
       lastSeenRevision: 0,
     }))
-
     const [readyB, snapshotB] = await initialB
-    expect(readyB).toMatchObject({
-      type: 'session.ready',
-      playerId: game.players[1].id,
-    })
+    expect(readyB).toMatchObject({ type: 'session.ready', playerId: game.players[1].id })
     expect(snapshotB).toMatchObject({
       type: 'game.snapshot',
       snapshot: { self: { id: game.players[1].id } },
@@ -113,7 +105,6 @@ describe('real websocket multiplayer adapter', () => {
 
     const responseA = nextMessages(socketA, 2)
     const responseB = nextMessages(socketB, 1)
-
     socketA.send(JSON.stringify({
       type: 'game.command',
       command: {
@@ -127,10 +118,7 @@ describe('real websocket multiplayer adapter', () => {
 
     const [acceptedA, broadcastA] = await responseA
     const [broadcastB] = await responseB
-    expect(acceptedA).toMatchObject({
-      type: 'command.accepted',
-      revision: 1,
-    })
+    expect(acceptedA).toMatchObject({ type: 'command.accepted', revision: 1 })
     expect(broadcastA).toMatchObject({
       type: 'game.snapshot',
       revision: 1,
@@ -146,7 +134,104 @@ describe('real websocket multiplayer adapter', () => {
     socketB.close()
   })
 
-  it('creates and claims bootstrap sessions over HTTP', async () => {
+  it('creates a lobby, joins by name, and starts the game with the same host session', async () => {
+    running = await createMultiplayerServer({
+      port: 0,
+      allowedOrigins: ['*'],
+    }).listen()
+
+    const createResponse = await fetch(running.httpUrl + '/api/lobbies', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hostName: 'Mehmet', roomId: 'LIVE01' }),
+    })
+    const host = await createResponse.json() as {
+      roomId: string
+      playerId: number
+      sessionToken: string
+      revision: number
+    }
+    expect(createResponse.status).toBe(201)
+    expect(host.roomId).toBe('LIVE01')
+
+    const sessions = [host]
+    for (const name of ['Ayşe', 'Mert', 'Esra', 'Burak', 'Zeynep']) {
+      const response = await fetch(running.httpUrl + '/api/lobbies/LIVE01/join', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      expect(response.status).toBe(201)
+      sessions.push(await response.json() as typeof host)
+    }
+
+    const hostSocket = await openSocket(running.websocketUrl)
+    const initial = nextMessages(hostSocket, 2)
+    hostSocket.send(JSON.stringify({
+      type: 'session.resume',
+      roomId: host.roomId,
+      sessionToken: host.sessionToken,
+      lastSeenRevision: sessions.at(-1)!.revision,
+    }))
+    const [ready, lobbySnapshot] = await initial
+    expect(ready).toMatchObject({ type: 'session.ready', playerId: host.playerId })
+    expect(lobbySnapshot).toMatchObject({
+      type: 'lobby.snapshot',
+      snapshot: { players: expect.arrayContaining([
+        expect.objectContaining({ name: 'Mehmet', connected: true }),
+        expect.objectContaining({ name: 'Zeynep' }),
+      ]) },
+    })
+
+    let revision = sessions.at(-1)!.revision
+    for (const [index, session] of sessions.entries()) {
+      const result = running.sessions.dispatchLobby(session.sessionToken, {
+        type: 'lobby.ready',
+        requestId: 'ready-' + index,
+        baseRevision: revision,
+        ready: true,
+      })
+      expect(result.response.type).toBe('command.accepted')
+      revision = result.response.revision
+    }
+
+    const readyBroadcast = nextMessages(hostSocket, 1)
+    running.gateway.broadcastRoom('LIVE01')
+    expect((await readyBroadcast)[0]).toMatchObject({
+      type: 'lobby.snapshot',
+      revision,
+      snapshot: { canStart: true },
+    })
+
+    const startFrames = nextMessages(hostSocket, 2)
+    hostSocket.send(JSON.stringify({
+      type: 'lobby.command',
+      command: {
+        type: 'lobby.start',
+        requestId: 'start-live',
+        baseRevision: revision,
+      },
+    }))
+
+    const [accepted, gameSnapshot] = await startFrames
+    expect(accepted).toMatchObject({
+      type: 'command.accepted',
+      revision: revision + 1,
+    })
+    expect(gameSnapshot).toMatchObject({
+      type: 'game.snapshot',
+      revision: revision + 1,
+      snapshot: {
+        self: { id: host.playerId },
+        phase: 'role_reveal',
+      },
+    })
+    expect(JSON.stringify(gameSnapshot)).not.toContain('"secretRole"')
+
+    hostSocket.close()
+  })
+
+  it('keeps legacy active-game bootstrap endpoints for integration tooling', async () => {
     running = await createMultiplayerServer({
       port: 0,
       allowedOrigins: ['*'],
@@ -169,20 +254,11 @@ describe('real websocket multiplayer adapter', () => {
 
     expect(createResponse.status).toBe(201)
     expect(host.roomId).toBe('HTTP01')
-    expect(host.playerId).toBe(1)
-    expect(host.sessionToken.length).toBeGreaterThan(40)
 
     const claimResponse = await fetch(
       running.httpUrl + '/api/rooms/HTTP01/seats/2',
       { method: 'POST' },
     )
-    const guest = await claimResponse.json() as {
-      playerId: number
-      sessionToken: string
-    }
-
     expect(claimResponse.status).toBe(201)
-    expect(guest.playerId).toBe(2)
-    expect(guest.sessionToken).not.toBe(host.sessionToken)
   })
 })

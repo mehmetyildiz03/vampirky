@@ -33,7 +33,10 @@ describe('room session service', () => {
     )
     expect(resumed.playerId).toBe(game.players[1].id)
     expect(resumed.caughtUp).toBe(true)
-    expect(resumed.snapshot.self.id).toBe(game.players[1].id)
+    expect(resumed.message.type).toBe('game.snapshot')
+    if (resumed.message.type === 'game.snapshot') {
+      expect(resumed.message.snapshot.self.id).toBe(game.players[1].id)
+    }
 
     expect(() => service.claimSeat('VKTEST', game.players[1].id))
       .toThrow('This player seat already has a session.')
@@ -73,7 +76,7 @@ describe('room session service', () => {
     expect(retry.snapshot.chatMessages).toHaveLength(1)
   })
 
-  it('broadcasts a separately scoped snapshot for every claimed session', () => {
+  it('broadcasts a separately scoped game snapshot for every claimed session', () => {
     const game = discussionGame()
     const service = new RoomSessionService()
     const host = service.createRoom(game, game.players[0].id, 'BCAST1')
@@ -91,7 +94,10 @@ describe('room session service', () => {
     expect(result.broadcasts.map((item) => item.sessionToken).sort())
       .toEqual([host.sessionToken, guest.sessionToken].sort())
     for (const broadcast of result.broadcasts) {
-      expect(broadcast.message.snapshot.self.id).toBe(broadcast.playerId)
+      expect(broadcast.message.type).toBe('game.snapshot')
+      if (broadcast.message.type === 'game.snapshot') {
+        expect(broadcast.message.snapshot.self.id).toBe(broadcast.playerId)
+      }
     }
   })
 })
