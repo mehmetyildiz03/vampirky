@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "server:dev": "tsx server/start.ts",
     "typecheck:server": "tsc -p tsconfig.server.json",
-    "server:start": "tsx server/start.ts"
+    "server:start": "tsx server/start.ts",
+    "smoke:production": "node scripts/production-smoke.mjs"
   },
   "dependencies": {
     "react": "^19.1.1",

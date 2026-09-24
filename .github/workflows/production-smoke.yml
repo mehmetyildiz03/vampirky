@@ -1,0 +1,27 @@
+name: Production Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend_url:
+        description: HTTPS multiplayer backend origin, e.g. https://service.up.railway.app
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Verify HTTPS, CORS, WebSocket and lobby session flow
+        env:
+          VAMPIRKY_BACKEND_URL: ${{ inputs.backend_url }}
+          VAMPIRKY_SMOKE_ORIGIN: https://mehmetyildiz03.github.io
+        run: npm run smoke:production -- "$VAMPIRKY_BACKEND_URL"
