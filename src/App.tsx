@@ -42,10 +42,20 @@ import {
 } from './game/deduction'
 import type { DeductionMark, PrivateDeductionState } from './game/deduction'
 import type { ActionClaim, ChatChannel, ClaimKind, GameState, RoleId, StructuredClaim } from './game/types'
+import {
+  BrowserMultiplayerClient,
+  type ClientConnectionState,
+  type LobbySessionBootstrapResponse,
+} from './multiplayer/browserClient'
+import type { LobbySnapshot } from './multiplayer/protocol'
+import type { ViewerGameSnapshot } from './multiplayer/snapshot'
 
 type Screen =
   | 'home'
   | 'lobby'
+  | 'multiplayer-entry'
+  | 'multiplayer-lobby'
+  | 'multiplayer-role'
   | 'role'
   | 'night'
   | 'dawn'
@@ -65,6 +75,7 @@ type Player = {
 }
 
 const HUMAN_ID = 1
+const MULTIPLAYER_HTTP_URL = (import.meta.env.VITE_MULTIPLAYER_HTTP_URL ?? '').trim()
 
 const players: Player[] = [
   { id: 1, name: 'Ali', initial: 'A', accent: '#b67a47', status: 'ready', mic: true },
@@ -127,14 +138,15 @@ function VillageBackdrop() {
   )
 }
 
-function Topbar() {
+function Topbar({ name = 'Ali' }: { name?: string }) {
+  const initial = name.trim().charAt(0).toLocaleUpperCase('tr-TR') || 'A'
   return (
     <header className="topbar">
       <button>⚙ <span>Ayarlar</span></button>
       <div className="top-spacer" />
       <div className="profile">
-        <span className="avatar small">A</span>
-        <div><b>Ali</b><small>Köyün Sesi</small></div><em>12</em>
+        <span className="avatar small">{initial}</span>
+        <div><b>{name}</b><small>Köyün Sesi</small></div><em>12</em>
       </div>
       <div className="coin">☀ 2.450</div><button>♟</button><button>✉</button>
     </header>
@@ -232,6 +244,16 @@ function PhaseTimer({
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home')
   const [game, setGame] = useState<GameState | null>(null)
+  const [multiplayerClient] = useState(() =>
+    MULTIPLAYER_HTTP_URL
+      ? new BrowserMultiplayerClient({ httpBaseUrl: MULTIPLAYER_HTTP_URL })
+      : null,
+  )
+  const [multiplayerEntryMode, setMultiplayerEntryMode] = useState<'create' | 'join'>('create')
+  const [multiplayerLobby, setMultiplayerLobby] = useState<LobbySnapshot | null>(null)
+  const [multiplayerGame, setMultiplayerGame] = useState<ViewerGameSnapshot | null>(null)
+  const [multiplayerError, setMultiplayerError] = useState('')
+  const [multiplayerConnection, setMultiplayerConnection] = useState<ClientConnectionState>('idle')
   const [deduction, setDeduction] = useState<PrivateDeductionState>(() =>
     createPrivateDeductionState(HUMAN_ID, players.map((player) => player.id)),
   )
@@ -260,6 +282,27 @@ export default function App() {
     vampire: 0,
     ghost: 0,
   })
+
+  useEffect(() => {
+    if (!multiplayerClient) return
+
+    return multiplayerClient.subscribe((event) => {
+      if (event.type === 'state') {
+        setMultiplayerConnection(event.state)
+      } else if (event.type === 'lobbySnapshot') {
+        setMultiplayerLobby(event.snapshot)
+        setMultiplayerError('')
+        setScreen('multiplayer-lobby')
+      } else if (event.type === 'snapshot') {
+        setMultiplayerGame(event.snapshot)
+        setMultiplayerLobby(null)
+        setMultiplayerError('')
+        setScreen('multiplayer-role')
+      } else if (event.type === 'error') {
+        setMultiplayerError(event.message)
+      }
+    })
+  }, [multiplayerClient])
 
   const playPhaseWarning = (seconds: number) => {
     if (!phaseWarningEnabled) return
@@ -439,6 +482,60 @@ export default function App() {
     }
   }
 
+  const openMultiplayerEntry = (mode: 'create' | 'join') => {
+    setMultiplayerError('')
+    if (!multiplayerClient) {
+      setScreen('lobby')
+      return
+    }
+    setMultiplayerEntryMode(mode)
+    setScreen('multiplayer-entry')
+  }
+
+  const enterMultiplayerLobby = async (
+    name: string,
+    roomCode?: string,
+  ) => {
+    if (!multiplayerClient) return
+    setMultiplayerError('')
+
+    try {
+      const bootstrap: LobbySessionBootstrapResponse =
+        multiplayerEntryMode === 'create'
+          ? await multiplayerClient.createLobby(name, roomCode || undefined)
+          : await multiplayerClient.joinLobby(roomCode ?? '', name)
+
+      setMultiplayerLobby(bootstrap.snapshot)
+      multiplayerClient.connect({
+        roomId: bootstrap.roomId,
+        playerId: bootstrap.playerId,
+        sessionToken: bootstrap.sessionToken,
+        revision: bootstrap.revision,
+      })
+      setScreen('multiplayer-lobby')
+    } catch (error) {
+      setMultiplayerError(
+        error instanceof Error ? error.message : 'Odaya bağlanılamadı.',
+      )
+    }
+  }
+
+  const reconnectMultiplayerLobby = (roomCode: string) => {
+    if (!multiplayerClient) return false
+    setMultiplayerError('')
+    const resumed = multiplayerClient.reconnectStored(roomCode.trim().toUpperCase())
+    if (resumed) setScreen('multiplayer-lobby')
+    return resumed
+  }
+
+  const leaveMultiplayerView = () => {
+    multiplayerClient?.close()
+    setMultiplayerLobby(null)
+    setMultiplayerGame(null)
+    setMultiplayerError('')
+    setScreen('home')
+  }
+
   const launchGame = () => {
     preparePhaseWarningAudio()
     const next = createGame(players.map(({ id, name }) => ({ id, name })))
@@ -559,10 +656,54 @@ export default function App() {
     setScreen('night')
   }
 
+  const multiplayerPlayerId = multiplayerClient?.getIdentity()?.playerId
+  const multiplayerPlayerName = multiplayerLobby?.players.find(
+    (player) => player.id === multiplayerPlayerId,
+  )?.name
+  const topbarName =
+    multiplayerPlayerName ??
+    (multiplayerGame
+      ? multiplayerGame.players.find((player) => player.id === multiplayerGame.self.id)?.name
+      : undefined) ??
+    'Ali'
+
   return (
     <div className={'app phase-' + screen}>
-      <VillageBackdrop /><Topbar />
-      {screen === 'home' && <Home onLobby={() => setScreen('lobby')} onQuick={launchGame} />}
+      <VillageBackdrop /><Topbar name={topbarName} />
+      {screen === 'home' && (
+        <Home
+          onCreateRoom={() => openMultiplayerEntry('create')}
+          onJoinRoom={() => openMultiplayerEntry('join')}
+          onQuick={launchGame}
+          multiplayerAvailable={Boolean(multiplayerClient)}
+        />
+      )}
+      {screen === 'multiplayer-entry' && multiplayerClient && (
+        <MultiplayerEntry
+          mode={multiplayerEntryMode}
+          error={multiplayerError}
+          onBack={() => setScreen('home')}
+          onSubmit={enterMultiplayerLobby}
+          onReconnect={reconnectMultiplayerLobby}
+        />
+      )}
+      {screen === 'multiplayer-lobby' && multiplayerClient && multiplayerLobby && (
+        <NetworkLobby
+          snapshot={multiplayerLobby}
+          playerId={multiplayerPlayerId ?? 0}
+          connectionState={multiplayerConnection}
+          error={multiplayerError}
+          onBack={leaveMultiplayerView}
+          onReady={(ready) => multiplayerClient.setReady(ready)}
+          onStart={() => multiplayerClient.startGame()}
+        />
+      )}
+      {screen === 'multiplayer-role' && multiplayerGame && (
+        <MultiplayerRoleReveal
+          snapshot={multiplayerGame}
+          onBack={leaveMultiplayerView}
+        />
+      )}
       {screen === 'lobby' && (
         <Lobby
           onBack={() => setScreen('home')}
@@ -666,16 +807,45 @@ export default function App() {
   )
 }
 
-function Home({ onLobby, onQuick }: { onLobby: () => void; onQuick: () => void }) {
+function Home({
+  onCreateRoom,
+  onJoinRoom,
+  onQuick,
+  multiplayerAvailable,
+}: {
+  onCreateRoom: () => void
+  onJoinRoom: () => void
+  onQuick: () => void
+  multiplayerAvailable: boolean
+}) {
   return (
     <main className="home">
       <section>
         <Brand />
         <div className="menu">
           <Menu primary icon="⚔" title="Hızlı Oyun" sub="Hemen oyna, yeni insanlarla tanış." onClick={onQuick} />
-          <Menu icon="⌂" title="Oda Kur" sub="Kendi kurallarınla oyna." onClick={onLobby} />
-          <Menu icon="♟" title="Odaya Katıl" sub="Arkadaşlarının odasına katıl." onClick={onLobby} />
+          <Menu
+            icon="⌂"
+            title="Oda Kur"
+            sub={multiplayerAvailable ? 'Gerçek zamanlı oda oluştur.' : 'Demo lobi · backend bağlı değil.'}
+            onClick={onCreateRoom}
+          />
+          <Menu
+            icon="♟"
+            title="Odaya Katıl"
+            sub={multiplayerAvailable ? 'Oda koduyla arkadaşlarına katıl.' : 'Demo lobi · backend bağlı değil.'}
+            onClick={onJoinRoom}
+          />
           <Menu icon="▤" title="Nasıl Oynanır?" sub="Kuralları öğren, ustalaş." />
+        </div>
+        <div className={'multiplayer-status ' + (multiplayerAvailable ? 'online' : 'demo')}>
+          <span>{multiplayerAvailable ? '●' : '○'}</span>
+          <b>{multiplayerAvailable ? 'Multiplayer backend bağlı' : 'Demo mod'}</b>
+          <small>
+            {multiplayerAvailable
+              ? 'Oda Kur ve Odaya Katıl gerçek WebSocket oturumu kullanır.'
+              : 'VITE_MULTIPLAYER_HTTP_URL tanımlandığında gerçek oda akışı etkinleşir.'}
+          </small>
         </div>
       </section>
       <aside className="home-side">
@@ -689,6 +859,283 @@ function Home({ onLobby, onQuick }: { onLobby: () => void; onQuick: () => void }
       <Lore />
     </main>
   )
+}
+
+function MultiplayerEntry({
+  mode,
+  error,
+  onBack,
+  onSubmit,
+  onReconnect,
+}: {
+  mode: 'create' | 'join'
+  error: string
+  onBack: () => void
+  onSubmit: (name: string, roomCode?: string) => Promise<void>
+  onReconnect: (roomCode: string) => boolean
+}) {
+  const [name, setName] = useState('')
+  const [roomCode, setRoomCode] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const submit = async () => {
+    if (!name.trim()) return
+    if (mode === 'join' && !roomCode.trim()) return
+    setBusy(true)
+    try {
+      await onSubmit(name.trim(), roomCode.trim().toUpperCase())
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <main className="multiplayer-entry">
+      <section className="panel multiplayer-entry-card">
+        <Brand />
+        <small className="network-kicker">GERÇEK ZAMANLI MULTIPLAYER</small>
+        <h1>{mode === 'create' ? 'Yeni Oda Kur' : 'Odaya Katıl'}</h1>
+        <p>
+          {mode === 'create'
+            ? 'Adını yaz. Oda kodunu boş bırakırsan sunucu güvenli bir kod üretir.'
+            : 'Arkadaşının oda kodunu ve oyunda görünecek adını gir.'}
+        </p>
+        <label>
+          <span>OYUNCU ADI</span>
+          <input
+            value={name}
+            maxLength={20}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Örn. Mehmet"
+            autoComplete="nickname"
+          />
+        </label>
+        <label>
+          <span>ODA KODU {mode === 'create' && <em>· isteğe bağlı</em>}</span>
+          <input
+            value={roomCode}
+            maxLength={12}
+            onChange={(event) => setRoomCode(event.target.value.toUpperCase())}
+            placeholder={mode === 'create' ? 'Otomatik üret' : 'Örn. VK7M3'}
+            autoCapitalize="characters"
+          />
+        </label>
+        {error && <div className="network-error">⚠ {error}</div>}
+        <div className="network-entry-actions">
+          <button className="back" onClick={onBack}>← Geri</button>
+          {mode === 'join' && roomCode.trim() && (
+            <button
+              className="network-resume"
+              onClick={() => onReconnect(roomCode.trim().toUpperCase())}
+            >
+              ↻ Mevcut Oturuma Dön
+            </button>
+          )}
+          <button
+            className="start"
+            disabled={busy || !name.trim() || (mode === 'join' && !roomCode.trim())}
+            onClick={submit}
+          >
+            {busy ? 'Bağlanıyor…' : mode === 'create' ? 'Odayı Kur' : 'Odaya Katıl'} <b>›</b>
+          </button>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function NetworkLobby({
+  snapshot,
+  playerId,
+  connectionState,
+  error,
+  onBack,
+  onReady,
+  onStart,
+}: {
+  snapshot: LobbySnapshot
+  playerId: number
+  connectionState: ClientConnectionState
+  error: string
+  onBack: () => void
+  onReady: (ready: boolean) => void
+  onStart: () => void
+}) {
+  const self = snapshot.players.find((player) => player.id === playerId)
+  const isHost = snapshot.hostPlayerId === playerId
+  const counts = snapshot.players.length >= snapshot.minPlayers
+    ? countRoles(buildRolePack(snapshot.players.length))
+    : null
+  const openSlots = Math.max(0, snapshot.maxPlayers - snapshot.players.length)
+
+  const shareRoom = () => {
+    void navigator.clipboard?.writeText(snapshot.roomId)
+  }
+
+  return (
+    <main className="lobby network-lobby">
+      <aside className="lobby-left">
+        <Brand />
+        <button className="back" onClick={onBack}>← Bağlantıyı Kes</button>
+        <div className={'network-connection ' + connectionState}>
+          <span>●</span>
+          <div>
+            <b>{connectionState === 'ready' ? 'Sunucuya bağlı' : 'Bağlantı durumu'}</b>
+            <small>{connectionState}</small>
+          </div>
+        </div>
+        <Lore />
+      </aside>
+      <section className="panel lobby-panel">
+        <div className="panel-head">
+          <h1>Oda Lobisi</h1>
+          <div className="code"><small>ODA KODU</small><b>{snapshot.roomId}</b></div>
+          <button onClick={shareRoom}>⌯ Kodu Kopyala</button>
+        </div>
+
+        <div className="lobby-grid">
+          <div>
+            <h3>Oyuncular <small>({snapshot.players.length}/{snapshot.maxPlayers})</small></h3>
+            <div className="player-list">
+              {snapshot.players.map((player) => {
+                const initial = player.name.charAt(0).toLocaleUpperCase('tr-TR')
+                return (
+                  <div
+                    className={'player-line network-player ' + (player.id === playerId ? 'self' : '')}
+                    key={player.id}
+                  >
+                    <span
+                      className="avatar"
+                      style={{ '--accent': networkAccent(player.id) } as CSSProperties}
+                    >
+                      {initial}
+                    </span>
+                    <div>
+                      <b>
+                        {player.name}
+                        {player.isHost && <em> ♛</em>}
+                        {player.id === playerId && <i> SEN</i>}
+                      </b>
+                      <small className={player.ready ? 'ready' : 'not-ready'}>
+                        {player.ready ? '● Hazır' : '● Hazır Değil'}
+                      </small>
+                    </div>
+                    <span className={'presence ' + (player.connected ? 'online' : 'offline')}>
+                      {player.connected ? '● Bağlı' : '○ Koptu'}
+                    </span>
+                  </div>
+                )
+              })}
+              {openSlots > 0 && (
+                <div className="empty">
+                  ＋ <b>{openSlots} boş oyuncu yeri</b>
+                  <span>Oda kodunu paylaş</span>
+                </div>
+              )}
+            </div>
+
+            <div className="chat lobby-chat-placeholder">
+              <b>Gerçek Zamanlı Lobi</b>
+              <p>Ready, bağlantı durumu, host yetkisi ve reconnect sunucu tarafından yönetiliyor.</p>
+              <small>Lobi sohbeti ayrı bir sonraki sosyal katman olarak eklenecek.</small>
+            </div>
+          </div>
+
+          <div className="settings">
+            <div className="tabs"><button className="active">Oyun Ayarları</button><button>Rol Dağılımı</button></div>
+            <div className="mode">
+              <span>🌒</span>
+              <div>
+                <small>SERVER AUTHORITATIVE</small>
+                <h2>Klasik Paket</h2>
+                <p>Roller yalnızca host başlattığında sunucuda dağıtılır.</p>
+              </div>
+            </div>
+            <Setting icon="◆" label="Harita" value="Köy Meydanı" />
+            <Setting icon="☀" label="Tartışma" value="90 sn" />
+            <Setting icon="☾" label="Gece" value="40 sn" />
+            <Setting icon="🗳" label="Oylama" value="30 sn" />
+
+            <div className="roles">
+              <h3>Rol Dağılımı ({snapshot.players.length} Oyuncu)</h3>
+              <div>
+                <Role icon="🦇" name="Vampir" n={counts ? String(counts.vampire) : '–'} />
+                <Role icon="♙" name="Köylü" n={counts ? String(counts.villager) : '–'} />
+                <Role icon="◉" name="Kâhin" n={counts ? String(counts.seer) : '–'} />
+                <Role icon="⬟" name="Koruyucu" n={counts ? String(counts.protector) : '–'} />
+              </div>
+              <label>
+                {counts
+                  ? 'Roller başlatma anında sunucuda güvenli rastgele dağıtılır.'
+                  : `Başlamak için en az ${snapshot.minPlayers} oyuncu gerekir.`}
+              </label>
+            </div>
+
+            {error && <div className="network-error">⚠ {error}</div>}
+            <button
+              className={'ready-toggle ' + (self?.ready ? 'is-ready' : '')}
+              disabled={!self}
+              onClick={() => self && onReady(!self.ready)}
+            >
+              {self?.ready ? '✓ Hazırım' : '○ Hazır Değilim'}
+            </button>
+
+            {isHost ? (
+              <button className="start" disabled={!snapshot.canStart} onClick={onStart}>
+                {snapshot.canStart ? 'Oyunu Başlat' : 'Tüm Oyuncuları Bekle'} <b>›</b>
+              </button>
+            ) : (
+              <div className="host-wait">
+                <span>♛</span>
+                <div><b>Host oyunu başlatacak</b><small>Hazır durumunu açık tut.</small></div>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function MultiplayerRoleReveal({
+  snapshot,
+  onBack,
+}: {
+  snapshot: ViewerGameSnapshot
+  onBack: () => void
+}) {
+  const visual = roleVisuals[snapshot.self.role]
+  const allies = snapshot.self.knownVampireIds
+    .map((id) => snapshot.players.find((player) => player.id === id)?.name)
+    .filter(Boolean)
+
+  return (
+    <main className="result-shell multiplayer-role-reveal">
+      <Brand />
+      <section className={'flow-card role-reveal-card role-' + snapshot.self.role}>
+        <small>SERVER TARAFINDAN DAĞITILAN ROLÜN</small>
+        <div className="role-emblem">{visual.icon}</div>
+        <h1>{visual.title}</h1>
+        <p>{visual.text}</p>
+        {allies.length > 0 && <div className="secret-line"><b>Diğer Vampir:</b> {allies.join(', ')}</div>}
+        <div className="privacy-note">Bu snapshot yalnızca senin oturumun için üretildi.</div>
+        <div className="network-role-proof">
+          <span>🔒</span>
+          <div>
+            <b>Gizli rol artık client GameState'inden gelmiyor</b>
+            <small>Oyun ekranlarının viewer snapshot modeline taşınması sıradaki katman.</small>
+          </div>
+        </div>
+        <button className="back" onClick={onBack}>← Multiplayer oturumundan çık</button>
+      </section>
+      <Lore />
+    </main>
+  )
+}
+
+function networkAccent(playerId: number): string {
+  const accents = ['#b67a47','#8d83bd','#8a6d57','#a24139','#a98b55','#587991','#79634e','#6e5a75','#716550','#5e7f65','#87596d','#536f8f']
+  return accents[(playerId - 1) % accents.length]
 }
 
 function Menu({ icon, title, sub, onClick, primary }: { icon: string; title: string; sub: string; onClick?: () => void; primary?: boolean }) {
