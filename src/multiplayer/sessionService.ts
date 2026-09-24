@@ -24,6 +24,10 @@ import type {
   LobbySnapshotMessage,
   RoomSnapshotMessage,
 } from './protocol'
+import {
+  ROOM_PERSISTENCE_VERSION,
+  type PersistedRoomSessionService,
+} from './persistence'
 import { AuthoritativeRoom } from './roomRuntime'
 import type {
   ViewerGameSnapshot,
@@ -135,6 +139,143 @@ function currentRevision(room: RoomRecord): number {
 export class RoomSessionService {
   private rooms = new Map<string, RoomRecord>()
   private roomIdBySessionToken = new Map<string, string>()
+  private persistenceListener:
+    | ((state: PersistedRoomSessionService) => void)
+    | null = null
+
+  setPersistenceListener(
+    listener: ((state: PersistedRoomSessionService) => void) | null,
+  ): void {
+    this.persistenceListener = listener
+  }
+
+  exportPersistedState(): PersistedRoomSessionService {
+    return {
+      version: ROOM_PERSISTENCE_VERSION,
+      savedAt: new Date().toISOString(),
+      rooms: [...this.rooms.values()].map((room) => ({
+        roomId: room.roomId,
+        runtime: room.runtime?.exportPersistedState() ?? null,
+        lobby: room.lobby
+          ? {
+              hostPlayerId: room.lobby.hostPlayerId,
+              nextPlayerId: room.lobby.nextPlayerId,
+              revision: room.lobby.revision,
+              settingsRevision: room.lobby.settingsRevision,
+              phaseDurations: { ...room.lobby.phaseDurations },
+              players: room.lobby.players.map((player) => ({
+                id: player.id,
+                name: player.name,
+                ready: player.ready,
+              })),
+            }
+          : null,
+        playerIds: [...room.playerIds],
+        sessions: [...room.sessionsByToken.values()].map((session) => ({
+          token: session.token,
+          playerId: session.playerId,
+          acceptedRequests: [...session.acceptedRequests.values()].map(
+            (accepted) => ({ ...accepted }),
+          ),
+          privateDeduction: session.privateDeduction
+            ? structuredClone(session.privateDeduction)
+            : null,
+        })),
+      })),
+    }
+  }
+
+  restorePersistedState(state: PersistedRoomSessionService): void {
+    if (state.version !== ROOM_PERSISTENCE_VERSION) {
+      throw new Error(
+        `Unsupported room persistence version: ${String(state.version)}.`,
+      )
+    }
+
+    const rooms = new Map<string, RoomRecord>()
+    const roomIdBySessionToken = new Map<string, string>()
+
+    for (const persistedRoom of state.rooms) {
+      const roomId = normalizeRoomId(persistedRoom.roomId)
+      if (!roomId || rooms.has(roomId)) {
+        throw new Error('Persisted state contains an invalid or duplicate room id.')
+      }
+
+      const playerIds = new Set(persistedRoom.playerIds)
+      const sessionsByToken = new Map<string, SessionRecord>()
+      const tokenByPlayerId = new Map<number, string>()
+
+      for (const persistedSession of persistedRoom.sessions) {
+        if (!playerIds.has(persistedSession.playerId)) {
+          throw new Error('Persisted session references an unknown player.')
+        }
+        if (sessionsByToken.has(persistedSession.token)) {
+          throw new Error('Persisted room contains a duplicate session token.')
+        }
+        if (tokenByPlayerId.has(persistedSession.playerId)) {
+          throw new Error('Persisted room contains duplicate player sessions.')
+        }
+        if (roomIdBySessionToken.has(persistedSession.token)) {
+          throw new Error('Persisted state reuses a session token across rooms.')
+        }
+
+        const acceptedRequests = new Map<string, CommandAcceptedMessage>()
+        for (const accepted of persistedSession.acceptedRequests) {
+          if (acceptedRequests.has(accepted.requestId)) {
+            throw new Error('Persisted session contains duplicate request ids.')
+          }
+          acceptedRequests.set(accepted.requestId, { ...accepted })
+        }
+
+        const session: SessionRecord = {
+          token: persistedSession.token,
+          playerId: persistedSession.playerId,
+          acceptedRequests,
+          privateDeduction: persistedSession.privateDeduction
+            ? structuredClone(persistedSession.privateDeduction)
+            : null,
+        }
+        sessionsByToken.set(session.token, session)
+        tokenByPlayerId.set(session.playerId, session.token)
+        roomIdBySessionToken.set(session.token, roomId)
+      }
+
+      const lobby: LobbyRecord | null = persistedRoom.lobby
+        ? {
+            hostPlayerId: persistedRoom.lobby.hostPlayerId,
+            nextPlayerId: persistedRoom.lobby.nextPlayerId,
+            revision: persistedRoom.lobby.revision,
+            settingsRevision: persistedRoom.lobby.settingsRevision,
+            phaseDurations: { ...persistedRoom.lobby.phaseDurations },
+            players: persistedRoom.lobby.players.map((player) => ({
+              ...player,
+              connected: false,
+            })),
+          }
+        : null
+      const runtime = persistedRoom.runtime
+        ? AuthoritativeRoom.restore(persistedRoom.runtime)
+        : null
+
+      if (Boolean(runtime) === Boolean(lobby)) {
+        throw new Error(
+          'Persisted room must contain exactly one lobby or active runtime.',
+        )
+      }
+
+      rooms.set(roomId, {
+        roomId,
+        runtime,
+        lobby,
+        playerIds,
+        sessionsByToken,
+        tokenByPlayerId,
+      })
+    }
+
+    this.rooms = rooms
+    this.roomIdBySessionToken = roomIdBySessionToken
+  }
 
   /**
    * Legacy/active-game bootstrap retained for engine and transport tests.
@@ -193,6 +334,7 @@ export class RoomSessionService {
     }
     this.rooms.set(roomId, room)
     const session = this.createSession(room, hostPlayerId)
+    this.notifyPersistentChange()
 
     return {
       roomId,
@@ -229,6 +371,7 @@ export class RoomSessionService {
     lobby.revision += 1
     room.playerIds.add(playerId)
     const session = this.createSession(room, playerId)
+    this.notifyPersistentChange()
 
     return {
       roomId: room.roomId,
@@ -250,6 +393,7 @@ export class RoomSessionService {
     }
 
     const session = this.createSession(room, playerId)
+    this.notifyPersistentChange()
     return {
       roomId: room.roomId,
       playerId,
@@ -332,6 +476,7 @@ export class RoomSessionService {
     const result = room.runtime.dispatch(session.playerId, command)
     if (result.response.type === 'command.accepted') {
       session.acceptedRequests.set(command.requestId, result.response)
+      this.notifyPersistentChange()
       return {
         response: result.response,
         message: this.messageForRoomPlayer(room, session.playerId),
@@ -399,6 +544,7 @@ export class RoomSessionService {
       lobby.revision += 1
       const accepted = this.accept(command.requestId, lobby.revision)
       session.acceptedRequests.set(command.requestId, accepted)
+      this.notifyPersistentChange()
       return {
         response: accepted,
         message: this.messageForRoomPlayer(room, session.playerId),
@@ -439,6 +585,7 @@ export class RoomSessionService {
       lobby.settingsRevision = lobby.revision
       const accepted = this.accept(command.requestId, lobby.revision)
       session.acceptedRequests.set(command.requestId, accepted)
+      this.notifyPersistentChange()
       return {
         response: accepted,
         message: this.messageForRoomPlayer(room, session.playerId),
@@ -493,6 +640,7 @@ export class RoomSessionService {
     room.lobby = null
     const accepted = this.accept(command.requestId, startRevision)
     session.acceptedRequests.set(command.requestId, accepted)
+    this.notifyPersistentChange()
 
     return {
       response: accepted,
@@ -605,6 +753,7 @@ export class RoomSessionService {
 
     const accepted = this.accept(command.requestId, currentRevision(room))
     session.acceptedRequests.set(command.requestId, accepted)
+    this.notifyPersistentChange()
     return {
       response: accepted,
       message: this.messageForRoomPlayer(room, session.playerId),
@@ -652,11 +801,14 @@ export class RoomSessionService {
 
   tick(now = Date.now()): SessionBroadcast[] {
     const broadcasts: SessionBroadcast[] = []
+    let changed = false
     for (const room of this.rooms.values()) {
       if (room.runtime?.advanceExpired(now)) {
+        changed = true
         broadcasts.push(...this.broadcastsForRoom(room))
       }
     }
+    if (changed) this.notifyPersistentChange()
     return broadcasts
   }
 
@@ -797,6 +949,10 @@ export class RoomSessionService {
       ...snapshot,
       privateDeduction,
     }
+  }
+
+  private notifyPersistentChange(): void {
+    this.persistenceListener?.(this.exportPersistedState())
   }
 
   private reserveRoomId(requestedRoomId?: string): string {
