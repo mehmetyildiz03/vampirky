@@ -23,7 +23,10 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - run: npm run build
+      - name: Build production client
+        run: npm run build
+        env:
+          VITE_MULTIPLAYER_HTTP_URL: ${{ vars.VAMPIRKY_MULTIPLAYER_HTTP_URL }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

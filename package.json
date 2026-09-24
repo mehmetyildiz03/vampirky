@@ -10,12 +10,14 @@
     "build": "tsc -b && tsc -p tsconfig.server.json && vite build",
     "preview": "vite preview",
     "server:dev": "tsx server/start.ts",
-    "typecheck:server": "tsc -p tsconfig.server.json"
+    "typecheck:server": "tsc -p tsconfig.server.json",
+    "server:start": "tsx server/start.ts"
   },
   "dependencies": {
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "ws": "^8.21.3"
+    "ws": "^8.21.3",
+    "tsx": "^4.23.15"
   },
   "devDependencies": {
     "@types/react": "^19.1.16",
@@ -25,7 +27,6 @@
     "vite": "^7.1.7",
     "vitest": "^5.0.1",
     "@types/node": "^22.20.4",
-    "@types/ws": "^8.18.1",
-    "tsx": "^4.23.15"
+    "@types/ws": "^8.18.1"
   }
 }

@@ -36,6 +36,23 @@ const server = createMultiplayerServer({
 
 const running = await server.listen()
 
+let shuttingDown = false
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`Received ${signal}; flushing multiplayer state and shutting down.`)
+  try {
+    await running.close()
+    process.exit(0)
+  } catch (error) {
+    console.error('Graceful shutdown failed.', error)
+    process.exit(1)
+  }
+}
+
+process.once('SIGTERM', () => { void shutdown('SIGTERM') })
+process.once('SIGINT', () => { void shutdown('SIGINT') })
+
 console.log(`Vampir Köylü multiplayer server listening on ${running.httpUrl}`)
 console.log(`WebSocket endpoint: ${running.websocketUrl}`)
 

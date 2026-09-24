@@ -123,3 +123,31 @@ and are closed.
 The WebSocket server also uses a 30-second ping/pong heartbeat so silent broken
 connections eventually become real disconnects and cannot keep rooms alive
 forever.
+
+
+## Production deployment
+
+The backend is container-ready. It listens on Railway's injected `PORT`,
+binds to `0.0.0.0`, serves `GET /health`, derives WebSocket traffic from
+`/ws`, and flushes queued persisted state on `SIGTERM` / `SIGINT`.
+
+Recommended single-instance Railway setup:
+
+1. Connect this GitHub repository as the service source.
+2. Set `RAILWAY_DOCKERFILE_PATH=Railway.Dockerfile`.
+3. Attach one persistent volume mounted at `/data`.
+4. Set `VAMPIRKY_STATE_FILE=/data/vampirky-state.json`.
+5. Set `VAMPIRKY_ALLOWED_ORIGINS=https://mehmetyildiz03.github.io`.
+6. Configure the health check path as `/health`.
+7. Keep the service at **one replica** while JSON-file persistence is used.
+8. Generate a public Railway domain. Railway terminates TLS; the browser client
+   given an `https://` backend URL automatically derives `wss://.../ws`.
+
+The GitHub Pages workflow reads the repository variable
+`VAMPIRKY_MULTIPLAYER_HTTP_URL` and exposes it to Vite as
+`VITE_MULTIPLAYER_HTTP_URL`. Once the Railway public URL exists, set that
+repository variable to the HTTPS backend origin and rerun Deploy Pages.
+
+Do not mount the same `/data` volume into multiple replicas. Horizontal
+scaling requires replacing the JSON state store with a transactional shared
+store.
