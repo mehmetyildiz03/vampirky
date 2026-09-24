@@ -65,6 +65,12 @@ export type ClientGameCommand =
       type: 'claim.withdraw'
       claimId: number
     })
+  | (CommandMeta & {
+      type: 'phase.ready'
+    })
+  | (CommandMeta & {
+      type: 'phase.advance'
+    })
 
 export type ClientLobbyCommand =
   | (CommandMeta & {

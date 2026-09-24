@@ -55,6 +55,90 @@ describe('authoritative multiplayer room runtime', () => {
     expect(room.getRevision()).toBe(1)
   })
 
+  it('moves role reveal to night when every player confirms ready', () => {
+    const game = createGame(seeds(6))
+    const room = new AuthoritativeRoom(game, 0, game.players[0].id, 1_000)
+    let revision = 0
+
+    for (const [index, player] of game.players.entries()) {
+      const result = room.dispatch(player.id, {
+        type: 'phase.ready',
+        requestId: 'ready-' + player.id,
+        baseRevision: revision,
+      }, 2_000 + index)
+      expect(result.response.type).toBe('command.accepted')
+      revision += 1
+    }
+
+    expect(room.snapshotFor(game.players[0].id)).toMatchObject({
+      phase: 'night',
+      revision: 6,
+      phaseDurationSeconds: 40,
+      phaseReadyCount: 0,
+    })
+  })
+
+  it('lets only the host end discussion early', () => {
+    let game = beginNight(createGame(seeds(6)))
+    game = resolveNight(game)
+    game = beginDiscussion(game)
+    const hostId = game.players[0].id
+    const room = new AuthoritativeRoom(game, 0, hostId)
+
+    const rejected = room.dispatch(game.players[1].id, {
+      type: 'phase.advance',
+      requestId: 'not-host',
+      baseRevision: 0,
+    })
+    expect(rejected.response).toMatchObject({
+      type: 'command.rejected',
+      code: 'not_authorized',
+    })
+
+    const accepted = room.dispatch(hostId, {
+      type: 'phase.advance',
+      requestId: 'host',
+      baseRevision: 0,
+    })
+    expect(accepted.response.type).toBe('command.accepted')
+    expect(accepted.snapshot.phase).toBe('voting')
+  })
+
+  it('advances expired server phases and treats missing actions as pass', () => {
+    const game = beginNight(createGame(seeds(6)))
+    const room = new AuthoritativeRoom(game, 0, game.players[0].id, 10_000)
+    const deadline = room.getPhaseDeadlineAt()!
+
+    expect(room.advanceExpired(deadline - 1)).toBe(false)
+    expect(room.advanceExpired(deadline)).toBe(true)
+    expect(room.getRevision()).toBe(1)
+    expect(room.snapshotFor(game.players[0].id).phase).toBe('dawn')
+  })
+
+  it('resolves voting as soon as every living player has voted', () => {
+    let game = beginNight(createGame(seeds(6)))
+    game = resolveNight(game)
+    game = beginDiscussion(game)
+    game = beginVoting(game)
+    const room = new AuthoritativeRoom(game)
+    const living = game.players.filter((player) => player.alive)
+    let revision = 0
+
+    for (const voter of living) {
+      const target = living.find((candidate) => candidate.id !== voter.id)!
+      const result = room.dispatch(voter.id, {
+        type: 'vote.submit',
+        requestId: 'vote-' + voter.id,
+        baseRevision: revision,
+        targetId: target.id,
+      })
+      expect(result.response.type).toBe('command.accepted')
+      revision += 1
+    }
+
+    expect(room.snapshotFor(living[0].id).phase).toBe('resolution')
+  })
+
   it('derives the claim author from the authenticated player id', () => {
     let game = beginNight(createGame(seeds(9)))
     game = resolveNight(game)
@@ -131,26 +215,5 @@ describe('authoritative multiplayer room runtime', () => {
     expect(result.response.type).toBe('command.accepted')
     expect(room.snapshotFor(outsider.id).chatMessages).toEqual([])
     expect(room.snapshotFor(vampire.id).chatMessages).toHaveLength(1)
-  })
-
-  it('uses the server phase and legal targets for vote commands', () => {
-    let game = beginNight(createGame(seeds(9)))
-    game = resolveNight(game)
-    game = beginDiscussion(game)
-    game = beginVoting(game)
-    const room = new AuthoritativeRoom(game)
-    const voter = game.players.find((player) => player.alive)!
-    const targetId = room.snapshotFor(voter.id).capabilities.voteTargetIds[0]
-
-    const accepted = room.dispatch(voter.id, {
-      type: 'vote.submit',
-      requestId: 'vote-1',
-      baseRevision: 0,
-      targetId,
-    })
-
-    expect(accepted.response.type).toBe('command.accepted')
-    expect(accepted.snapshot.voteHistory).toEqual([])
-    expect(accepted.snapshot.capabilities.canVote).toBe(true)
   })
 })
