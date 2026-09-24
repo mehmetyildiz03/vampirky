@@ -20,6 +20,7 @@ import {
   type PhaseDurations,
 } from '../game/timing'
 import type { GamePhase, GameState } from '../game/types'
+import type { PersistedAuthoritativeRoom } from './persistence'
 import type {
   ClientGameCommand,
   CommandAcceptedMessage,
@@ -66,6 +67,32 @@ export class AuthoritativeRoom {
     const duration = this.durationFor(initialState.phase)
     this.phaseDurationSeconds = duration
     this.phaseDeadlineAt = duration === null ? null : now + duration * 1000
+  }
+
+  static restore(persisted: PersistedAuthoritativeRoom): AuthoritativeRoom {
+    const room = new AuthoritativeRoom(
+      structuredClone(persisted.state),
+      persisted.revision,
+      persisted.hostPlayerId,
+      0,
+      persisted.phaseDurations,
+    )
+    room.phaseReadyPlayerIds = new Set(persisted.phaseReadyPlayerIds)
+    room.phaseDeadlineAt = persisted.phaseDeadlineAt
+    room.phaseDurationSeconds = persisted.phaseDurationSeconds
+    return room
+  }
+
+  exportPersistedState(): PersistedAuthoritativeRoom {
+    return {
+      state: structuredClone(this.state),
+      revision: this.revision,
+      hostPlayerId: this.hostPlayerId,
+      phaseReadyPlayerIds: [...this.phaseReadyPlayerIds],
+      phaseDeadlineAt: this.phaseDeadlineAt,
+      phaseDurationSeconds: this.phaseDurationSeconds,
+      phaseDurations: { ...this.phaseDurations },
+    }
   }
 
   getRevision(): number {
