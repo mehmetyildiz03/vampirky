@@ -369,6 +369,7 @@ export class BrowserMultiplayerClient {
       this.emit({ type: 'error', message: message.message })
     } else if (message.type === 'session.rejected') {
       this.emit({ type: 'error', message: message.message })
+      this.invalidateRejectedSession()
     }
 
     if (this.identity) {
@@ -376,6 +377,23 @@ export class BrowserMultiplayerClient {
       this.persistIdentity()
     }
     this.emit({ type: 'message', message })
+  }
+
+  private invalidateRejectedSession(): void {
+    const identity = this.identity
+    this.manuallyClosed = true
+    this.clearReconnect()
+
+    if (identity) {
+      this.storage?.removeItem(this.storageKey(identity.roomId))
+    }
+
+    const socket = this.socket
+    this.socket = null
+    this.identity = null
+    this.revision = 0
+    socket?.close(1000, 'Session rejected by server.')
+    this.setState('closed')
   }
 
   private scheduleReconnect(): void {

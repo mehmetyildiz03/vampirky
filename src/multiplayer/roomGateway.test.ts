@@ -183,6 +183,33 @@ describe('room transport gateway', () => {
     expect(service.roomIdForSession(session.sessionToken)).toBeNull()
   })
 
+  it('rejects and closes a connected peer when a finished game TTL expires', () => {
+    const service = new RoomSessionService({ finishedGameTtlMs: 10 })
+    const game = discussionGame()
+    game.phase = 'ended'
+    game.winner = 'village'
+    const session = service.createRoom(game, game.players[0].id, 'FINISH1')
+    const gateway = new RoomGateway(service)
+    const peer = new FakePeer('finished-peer')
+
+    gateway.receive(peer, {
+      type: 'session.resume',
+      roomId: session.roomId,
+      sessionToken: session.sessionToken,
+      lastSeenRevision: 0,
+    })
+    peer.messages = []
+
+    gateway.tick(Date.now() + 20)
+
+    expect(peer.messages).toContainEqual(expect.objectContaining({
+      type: 'session.rejected',
+      code: 'room_not_found',
+    }))
+    expect(peer.closed).toBe(true)
+    expect(service.roomIdForSession(session.sessionToken)).toBeNull()
+  })
+
   it('does not accept commands before session resume', () => {
     const service = new RoomSessionService()
     const gateway = new RoomGateway(service)

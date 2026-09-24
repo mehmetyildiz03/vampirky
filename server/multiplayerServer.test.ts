@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -421,6 +421,43 @@ describe('real websocket multiplayer adapter', () => {
       }
 
       socket.close()
+    } finally {
+      await running?.close()
+      running = null
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('removes expired rooms from the persisted JSON state', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'vampirky-expiry-'))
+    const persistencePath = join(directory, 'rooms.json')
+
+    try {
+      running = await createMultiplayerServer({
+        port: 0,
+        allowedOrigins: ['*'],
+        persistencePath,
+        lifecycle: {
+          reconnectGraceMs: 60_000,
+          emptyLobbyTtlMs: 10,
+        },
+      }).listen()
+
+      const response = await fetch(running.httpUrl + '/api/lobbies', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ hostName: 'Host', roomId: 'DISKTTL' }),
+      })
+      expect(response.status).toBe(201)
+
+      running.gateway.tick(Date.now() + 20)
+      await running.close()
+      running = null
+
+      const persisted = JSON.parse(
+        await readFile(persistencePath, 'utf8'),
+      ) as { rooms: unknown[] }
+      expect(persisted.rooms).toEqual([])
     } finally {
       await running?.close()
       running = null
