@@ -51,10 +51,12 @@ export function NetworkGame({
 }) {
   const [selectedTarget, setSelectedTarget] = useState<number | null>(null)
   const [sideTab, setSideTab] = useState<'chat' | 'claims' | 'deduction'>('chat')
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
   const [claimSource, setClaimSource] = useState<{ id: number; text: string } | null>(null)
 
   useEffect(() => {
     setSelectedTarget(null)
+    setMobilePanelOpen(false)
     if (
       sideTab === 'claims' &&
       !['discussion', 'voting'].includes(snapshot.phase)
@@ -120,15 +122,20 @@ export function NetworkGame({
   )
 
   return (
-    <main className={'network-game network-game-' + snapshot.phase}>
+    <main className={[
+      'network-game',
+      'network-game-' + snapshot.phase,
+      !snapshot.self.alive ? 'network-game-ghost' : '',
+      'network-role-' + snapshot.self.role,
+    ].join(' ')}>
       <header className="network-game-top">
         <div>
-          <small>SERVER AUTHORITATIVE · {snapshot.round}. TUR</small>
+          <small>{snapshot.round}. TUR · CANLI OYUN</small>
           <b>{phaseTitle(snapshot.phase)}</b>
         </div>
         {timer}
         <div className={'network-live ' + connectionState}>
-          <span>●</span>{connectionState}
+          <span>●</span>{connectionStateLabel(connectionState)}
         </div>
         <button onClick={onExit}>Oturumdan Çık</button>
       </header>
@@ -137,9 +144,12 @@ export function NetworkGame({
         <div className="network-stage">
           <div className="network-stage-head">
             <div>
-              <small>{phaseKicker(snapshot.phase)}</small>
+              <small>{phaseKicker(snapshot.phase, snapshot.self.alive)}</small>
               <h1>{phaseHeadline(snapshot)}</h1>
             </div>
+            {!snapshot.self.alive && (
+              <div className="network-ghost-badge">☠ HAYALET</div>
+            )}
             {snapshot.phase === 'discussion' && snapshot.capabilities.canAdvancePhase && (
               <button className="network-host-action" onClick={() => client.advancePhase()}>
                 🗳 Oylamaya Geç
@@ -170,13 +180,22 @@ export function NetworkGame({
           )}
         </div>
 
-        <aside className="network-game-side">
-          <div className="network-self-card">
-            <span>{roleVisuals[snapshot.self.role].icon}</span>
+        <aside className={'network-game-side ' + (mobilePanelOpen ? 'mobile-open' : '')}>
+          <div className="network-mobile-sheet-head">
+            <span />
+            <b>{sideTab === 'chat' ? 'Sohbet' : sideTab === 'claims' ? 'İddialar' : 'Dedüksiyon'}</b>
+            <button aria-label="Paneli kapat" onClick={() => setMobilePanelOpen(false)}>×</button>
+          </div>
+          <div className={'network-self-card ' + (!snapshot.self.alive ? 'ghost' : '')}>
+            <span>{snapshot.self.alive ? roleVisuals[snapshot.self.role].icon : '☠'}</span>
             <div>
-              <small>GİZLİ ROLÜN</small>
+              <small>{snapshot.self.alive ? 'GİZLİ ROLÜN' : 'OYUNDAN ELENDİN · HAYALET'}</small>
               <b>{roleVisuals[snapshot.self.role].title}</b>
-              <p>{roleVisuals[snapshot.self.role].text}</p>
+              <p>
+                {snapshot.self.alive
+                  ? roleVisuals[snapshot.self.role].text
+                  : 'Canlıların kararlarını artık etkileyemezsin; Hayalet kanalında oyunu takip edebilirsin.'}
+              </p>
             </div>
           </div>
 
@@ -196,21 +215,21 @@ export function NetworkGame({
           <div className="network-side-tabs">
             <button
               className={sideTab === 'chat' ? 'active' : ''}
-              onClick={() => setSideTab('chat')}
+              onClick={() => { setSideTab('chat'); setMobilePanelOpen(true) }}
             >
               ✉ Sohbet
             </button>
             {(snapshot.phase === 'discussion' || snapshot.phase === 'voting') && (
               <button
                 className={sideTab === 'claims' ? 'active' : ''}
-                onClick={() => setSideTab('claims')}
+                onClick={() => { setSideTab('claims'); setMobilePanelOpen(true) }}
               >
                 ◇ İddialar
               </button>
             )}
             <button
               className={sideTab === 'deduction' ? 'active' : ''}
-              onClick={() => setSideTab('deduction')}
+              onClick={() => { setSideTab('deduction'); setMobilePanelOpen(true) }}
             >
               ⌘ Dedüksiyon
             </button>
@@ -232,11 +251,49 @@ export function NetworkGame({
               onClaimFromMessage={(id, text) => {
                 setClaimSource({ id, text })
                 setSideTab('claims')
+                setMobilePanelOpen(true)
               }}
             />
           )}
         </aside>
       </section>
+
+      <button
+        className={'network-mobile-backdrop ' + (mobilePanelOpen ? 'open' : '')}
+        aria-label="Yan paneli kapat"
+        onClick={() => setMobilePanelOpen(false)}
+      />
+      <nav className="network-mobile-dock" aria-label="Oyun araçları">
+        <button
+          className={sideTab === 'chat' && mobilePanelOpen ? 'active' : ''}
+          onClick={() => {
+            setSideTab('chat')
+            setMobilePanelOpen(true)
+          }}
+        >
+          <span>✉</span><b>Sohbet</b>
+        </button>
+        {(snapshot.phase === 'discussion' || snapshot.phase === 'voting') && (
+          <button
+            className={sideTab === 'claims' && mobilePanelOpen ? 'active' : ''}
+            onClick={() => {
+              setSideTab('claims')
+              setMobilePanelOpen(true)
+            }}
+          >
+            <span>◇</span><b>İddialar</b>
+          </button>
+        )}
+        <button
+          className={sideTab === 'deduction' && mobilePanelOpen ? 'active' : ''}
+          onClick={() => {
+            setSideTab('deduction')
+            setMobilePanelOpen(true)
+          }}
+        >
+          <span>⌘</span><b>Notlar</b>
+        </button>
+      </nav>
 
       {error && <div className="network-game-error">⚠ {error}</div>}
     </main>
@@ -264,7 +321,7 @@ function RoleRevealPhase({
   return (
     <main className="network-role-screen">
       <section className={'network-role-card role-' + snapshot.self.role}>
-        <small>SERVER TARAFINDAN YALNIZCA SANA GÖNDERİLDİ</small>
+        <small>BU ROL YALNIZCA SANA GÖSTERİLİR</small>
         <div className="network-role-emblem">{visual.icon}</div>
         <h1>{visual.title}</h1>
         <p>{visual.text}</p>
@@ -285,6 +342,11 @@ function RoleRevealPhase({
             : '0%' }} />
         </div>
         <small>{snapshot.phaseReadyCount}/{snapshot.phaseReadyRequired} oyuncu rolünü gördü</small>
+        <div className="network-ready-progress intermission-progress">
+          <span style={{ width: snapshot.phaseReadyRequired
+            ? (snapshot.phaseReadyCount / snapshot.phaseReadyRequired * 100) + '%'
+            : '0%' }} />
+        </div>
         <button
           className="start"
           disabled={!snapshot.capabilities.canMarkPhaseReady}
@@ -294,7 +356,7 @@ function RoleRevealPhase({
         </button>
         {error && <div className="network-error">⚠ {error}</div>}
         <footer>
-          <span className={connectionState === 'ready' ? 'online' : ''}>● {connectionState}</span>
+          <span className={connectionState === 'ready' ? 'online' : ''}>● {connectionStateLabel(connectionState)}</span>
           <button onClick={onExit}>Oturumdan çık</button>
         </footer>
       </section>
@@ -338,8 +400,8 @@ function IntermissionPhase({
         <h1>{title}</h1>
         <p>
           {mode === 'dawn'
-            ? 'Gece çözümü server tarafından tamamlandı. Gizli saldırı ve koruma ayrıntıları açıklanmaz.'
-            : 'Yalnızca tamamlanmış oylar geçmişe kaydedildi. Sonuç server tarafından hesaplandı.'}
+            ? 'Gece sona erdi. Saldırı ve koruma gibi gizli ayrıntılar açıklanmaz.'
+            : 'Oylama tamamlandı. Köyün kararı kesinleşti ve oy geçmişine işlendi.'}
         </p>
         <ServerPhaseTimer
           serverNow={snapshot.serverNow}
@@ -433,11 +495,21 @@ function NightActionBar({
   const visual = roleVisuals[snapshot.self.role]
 
   if (!snapshot.self.alive) {
-    return <div className="network-action-status ghost">☠ Geceyi Hayalet olarak izliyorsun.</div>
+    return (
+      <div className="network-action-status ghost">
+        <b>☠ Hayalet olarak izliyorsun</b>
+        <span>Gece aksiyonlarına katılamazsın. Hayalet sohbetini kullanabilirsin.</span>
+      </div>
+    )
   }
 
   if (!snapshot.capabilities.canActAtNight) {
-    return <div className="network-action-status">☾ Bu gece aktif rol aksiyonun yok.</div>
+    return (
+      <div className="network-action-status">
+        <b>☾ Bu gece aksiyonun yok</b>
+        <span>Diğer oyuncuların gece kararlarını tamamlamasını bekliyorsun.</span>
+      </div>
+    )
   }
 
   return (
@@ -479,7 +551,7 @@ function VoteActionBar({
   return (
     <div className="network-action-bar vote">
       <div>
-        <small>OYUNU KİLİTLE</small>
+        <small>OYUNU VER</small>
         <b>{selectedTarget === null ? 'Köyden gönderilecek oyuncuyu seç' : playerName(snapshot, selectedTarget)}</b>
         {snapshot.capabilities.hasSubmittedVote && (
           <span>✓ Oyun server'a ulaştı; sonuçlanmadıysa değiştirebilirsin.</span>
@@ -962,7 +1034,7 @@ function NetworkEnd({
         <small>OYUN SONA ERDİ</small>
         <div className="network-end-icon">{snapshot.winner === 'vampire' ? '🦇' : '☀'}</div>
         <h1>{snapshot.winner === 'vampire' ? 'Vampirler Kazandı' : 'Köy Kazandı'}</h1>
-        <p>Roller artık güvenli şekilde açılabilir.</p>
+        <p>{snapshot.round} tur süren oyun tamamlandı. Tüm roller artık açık.</p>
         <div className="network-revealed-grid">
           {snapshot.revealedRoles.map((entry) => (
             <div key={entry.playerId}>
@@ -1003,18 +1075,27 @@ function ServerPhaseTimer({
     return () => window.clearInterval(timer)
   }, [deadlineAt, serverNow])
 
-  if (remainingMs === null) return <div className="network-server-timer">Server bekliyor</div>
+  if (remainingMs === null) return <div className="network-server-timer">Süre bekleniyor</div>
   const seconds = Math.ceil(remainingMs / 1000)
   const minutes = Math.floor(seconds / 60)
   const rest = seconds % 60
 
   return (
     <div className={'network-server-timer ' + (seconds <= 10 ? 'urgent' : '')}>
-      <small>SERVER SÜRESİ</small>
+      <small>KALAN SÜRE</small>
       <b>{String(minutes).padStart(2, '0')}:{String(rest).padStart(2, '0')}</b>
-      {durationSeconds !== null && <span>{durationSeconds} sn faz</span>}
+      {durationSeconds !== null && <span>En fazla {durationSeconds} sn</span>}
     </div>
   )
+}
+
+function connectionStateLabel(state: ClientConnectionState): string {
+  if (state === 'ready') return 'Bağlı'
+  if (state === 'connecting') return 'Bağlanıyor'
+  if (state === 'connected') return 'Oturum doğrulanıyor'
+  if (state === 'reconnecting') return 'Yeniden bağlanıyor'
+  if (state === 'closed') return 'Bağlantı kapalı'
+  return 'Hazırlanıyor'
 }
 
 function phaseTitle(phase: ViewerGameSnapshot['phase']): string {
@@ -1024,7 +1105,11 @@ function phaseTitle(phase: ViewerGameSnapshot['phase']): string {
   return phase
 }
 
-function phaseKicker(phase: ViewerGameSnapshot['phase']): string {
+function phaseKicker(
+  phase: ViewerGameSnapshot['phase'],
+  alive: boolean,
+): string {
+  if (!alive) return '☠ HAYALET GÖZLEMİ'
   if (phase === 'night') return '☾ KÖY UYUYOR'
   if (phase === 'discussion') return '☀ TARTIŞMA'
   if (phase === 'voting') return '🗳 KARAR ANI'

@@ -221,3 +221,208 @@
   .network-mode-card{grid-template-columns:58px 1fr}
   .network-role-distribution>div{grid-template-columns:repeat(2,1fr)}
 }
+
+
+/* P3.7 — production game phase UX polish */
+.network-game-night .network-stage{
+  border-color:#31485c;
+  background:linear-gradient(155deg,#08101aec,#090a0ee8);
+}
+.network-game-night .network-council{
+  background:
+    radial-gradient(circle at 50% 48%,#365a7d20,transparent 30%),
+    radial-gradient(circle at 50% 35%,#13283c55,transparent 66%);
+}
+.network-game-discussion .network-stage{
+  border-color:#695238;
+  background:linear-gradient(155deg,#13100bec,#090a0de8);
+}
+.network-game-voting .network-stage{
+  border-color:#704038;
+  background:linear-gradient(155deg,#160d0dec,#090a0de8);
+}
+.network-game-voting .network-council{
+  background:
+    radial-gradient(circle at 50% 50%,#7c221c22,transparent 34%),
+    radial-gradient(circle at 50% 45%,#43312620,transparent 65%);
+}
+.network-game-ghost .network-stage,
+.network-game-ghost .network-game-side{
+  border-color:#445464;
+}
+.network-game-ghost .network-council{
+  background:
+    radial-gradient(circle at 50% 45%,#607b9430,transparent 38%),
+    linear-gradient(#0a1016cc,#080b0fee);
+}
+.network-ghost-badge{
+  padding:5px 8px;
+  border:1px solid #546879;
+  background:#111820;
+  color:#9fb6c6;
+  font-size:8px;
+  letter-spacing:.08em;
+}
+.network-self-card.ghost{
+  border-color:#485965;
+  background:linear-gradient(120deg,#111820,#0d1116);
+}
+.network-self-card.ghost>span{color:#a6b9c5}
+.network-action-status{
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+}
+.network-action-status>b{font-size:11px}
+.network-action-status>span{font-size:8px;color:#6f7980}
+.network-action-status.ghost>span{color:#788d9a}
+.intermission-progress{margin:12px 0 6px}
+.network-mobile-dock,
+.network-mobile-sheet-head,
+.network-mobile-backdrop{display:none}
+
+@media(max-width:960px){
+  .network-game{
+    padding-bottom:74px;
+  }
+  .network-game-layout{
+    display:block;
+  }
+  .network-stage{
+    min-height:calc(100vh - 160px);
+  }
+  .network-game-side{
+    position:fixed;
+    z-index:92;
+    left:8px;
+    right:8px;
+    bottom:64px;
+    max-height:min(78vh,720px);
+    min-height:0;
+    overflow:auto;
+    transform:translateY(calc(100% + 90px));
+    transition:transform .22s ease;
+    box-shadow:0 24px 80px #000e;
+    border:1px solid #66513a;
+  }
+  .network-game-side.mobile-open{
+    transform:translateY(0);
+  }
+  .network-mobile-sheet-head{
+    position:sticky;
+    z-index:2;
+    top:-10px;
+    display:grid;
+    grid-template-columns:1fr auto 28px;
+    align-items:center;
+    gap:6px;
+    margin:-10px -10px 8px;
+    padding:9px 10px 8px;
+    border-bottom:1px solid #37322d;
+    background:#0b0e12f2;
+    backdrop-filter:blur(10px);
+  }
+  .network-mobile-sheet-head>span{
+    grid-column:1/4;
+    width:42px;
+    height:3px;
+    border-radius:99px;
+    justify-self:center;
+    background:#645a4e;
+  }
+  .network-mobile-sheet-head>b{
+    font-size:11px;
+    color:#d9c3a3;
+  }
+  .network-mobile-sheet-head>button{
+    border:0;
+    background:transparent;
+    color:#91877c;
+    font-size:21px;
+  }
+  .network-mobile-backdrop{
+    position:fixed;
+    z-index:90;
+    inset:0;
+    display:block;
+    border:0;
+    background:#0000;
+    pointer-events:none;
+    transition:background .2s;
+  }
+  .network-mobile-backdrop.open{
+    background:#0009;
+    pointer-events:auto;
+  }
+  .network-mobile-dock{
+    position:fixed;
+    z-index:95;
+    left:8px;
+    right:8px;
+    bottom:7px;
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:5px;
+    padding:5px;
+    border:1px solid #5a4733;
+    background:#090c10f2;
+    box-shadow:0 8px 26px #000d;
+    backdrop-filter:blur(12px);
+  }
+  .network-mobile-dock>button{
+    min-height:46px;
+    border:1px solid #302d29;
+    background:#101318;
+    color:#817a72;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:1px;
+  }
+  .network-mobile-dock>button.active{
+    border-color:#8b683d;
+    background:#241a11;
+    color:#e0bd88;
+  }
+  .network-mobile-dock span{font-size:16px}
+  .network-mobile-dock b{font-size:8px}
+  .network-action-bar{
+    position:sticky;
+    z-index:12;
+    bottom:61px;
+    box-shadow:0 -8px 25px #000b;
+  }
+  .network-action-status{
+    position:sticky;
+    z-index:12;
+    bottom:61px;
+    box-shadow:0 -8px 25px #0009;
+  }
+  .network-game-top{
+    position:sticky;
+    top:0;
+    z-index:30;
+    backdrop-filter:blur(12px);
+  }
+}
+
+@media(max-width:560px){
+  .network-game{padding-left:5px;padding-right:5px}
+  .network-game-top{gap:6px;padding:7px}
+  .network-game-top small{font-size:7px}
+  .network-server-timer{min-width:92px;padding:5px 6px}
+  .network-server-timer b{font-size:16px}
+  .network-stage{padding:8px}
+  .network-stage-head{align-items:flex-start}
+  .network-stage-head h1{font-size:21px}
+  .network-ghost-badge{font-size:7px}
+  .network-player-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .network-player-card{min-height:88px;padding:6px}
+  .network-avatar{width:44px;height:44px}
+  .network-action-bar{padding:9px}
+  .network-action-bar b{font-size:11px}
+  .network-action-bar span{font-size:8px}
+  .network-action-bar button{min-height:42px}
+  .network-game-side{left:5px;right:5px;bottom:61px;max-height:82vh}
+}
