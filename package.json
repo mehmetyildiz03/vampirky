@@ -13,7 +13,8 @@
     "typecheck:server": "tsc -p tsconfig.server.json",
     "server:start": "tsx server/start.ts",
     "smoke:production": "node scripts/production-smoke.mjs",
-    "e2e:production": "node scripts/production-full-match.mjs"
+    "e2e:production": "node scripts/production-full-match.mjs",
+    "e2e:production:timers": "node scripts/production-timer.mjs"
   },
   "dependencies": {
     "react": "^19.1.1",

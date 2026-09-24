@@ -1,0 +1,34 @@
+name: Production Timer E2E
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-timer-e2e
+  cancel-in-progress: false
+
+jobs:
+  production-timers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Wait briefly for production backend rollout
+        run: sleep 20
+      - name: Verify real server-owned phase timeouts in production
+        env:
+          VAMPIRKY_BACKEND_URL: https://vampirky-backend-production.up.railway.app
+          VAMPIRKY_E2E_ORIGIN: https://mehmetyildiz03.github.io
+          VAMPIRKY_TIMER_COMMAND_TIMEOUT_MS: 20000
+          VAMPIRKY_TIMER_PHASE_TIMEOUT_MS: 45000
+          VAMPIRKY_TIMER_TOLERANCE_MS: 3000
+        run: npm run e2e:production:timers -- "$VAMPIRKY_BACKEND_URL"
