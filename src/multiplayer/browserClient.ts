@@ -48,6 +48,10 @@ export type BrowserClientEvent =
 
 type Listener = (event: BrowserClientEvent) => void
 
+type LobbyCommandInput =
+  | { type: 'lobby.ready'; ready: boolean }
+  | { type: 'lobby.start' }
+
 export class BrowserMultiplayerClient {
   private socket: WebSocket | null = null
   private identity: SessionIdentity | null = null
@@ -212,7 +216,7 @@ export class BrowserMultiplayerClient {
   }
 
   private sendLobbyCommand(
-    command: Omit<ClientLobbyCommand, 'requestId' | 'baseRevision'>,
+    command: LobbyCommandInput,
   ): string {
     const requestId = crypto.randomUUID()
     const wireCommand = {
