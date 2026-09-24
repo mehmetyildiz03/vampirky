@@ -1,4 +1,6 @@
 import type { ChatChannel, ClaimKind, RoleId } from '../game/types'
+import type { DeductionMark } from '../game/deduction'
+import type { PhaseDurationKey, PhaseDurations } from '../game/timing'
 import type { ViewerGameSnapshot } from './snapshot'
 
 export type ClientRequestId = string
@@ -78,7 +80,29 @@ export type ClientLobbyCommand =
       ready: boolean
     })
   | (CommandMeta & {
+      type: 'lobby.duration'
+      key: PhaseDurationKey
+      seconds: number
+    })
+  | (CommandMeta & {
       type: 'lobby.start'
+    })
+
+export type ClientPrivateCommand =
+  | (CommandMeta & {
+      type: 'deduction.mark'
+      targetId: number
+      mark: DeductionMark
+    })
+  | (CommandMeta & {
+      type: 'deduction.note.add'
+      targetId: number
+      text: string
+    })
+  | (CommandMeta & {
+      type: 'deduction.note.remove'
+      targetId: number
+      noteId: number
     })
 
 export interface LobbyPlayerSnapshot {
@@ -97,6 +121,7 @@ export interface LobbySnapshot {
   minPlayers: number
   maxPlayers: number
   canStart: boolean
+  phaseDurations: PhaseDurations
   players: LobbyPlayerSnapshot[]
 }
 
@@ -155,10 +180,16 @@ export interface LobbyCommandMessage {
   command: ClientLobbyCommand
 }
 
+export interface PrivateCommandMessage {
+  type: 'private.command'
+  command: ClientPrivateCommand
+}
+
 export type ClientTransportMessage =
   | ReconnectHello
   | GameCommandMessage
   | LobbyCommandMessage
+  | PrivateCommandMessage
 
 export interface SessionReadyMessage {
   type: 'session.ready'

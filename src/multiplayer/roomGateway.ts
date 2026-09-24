@@ -36,7 +36,9 @@ export class RoomGateway {
     try {
       const result = message.type === 'lobby.command'
         ? this.sessions.dispatchLobby(sessionToken, message.command)
-        : this.sessions.dispatchGame(sessionToken, message.command)
+        : message.type === 'private.command'
+          ? this.sessions.dispatchPrivate(sessionToken, message.command)
+          : this.sessions.dispatchGame(sessionToken, message.command)
 
       peer.send(result.response)
       if (result.mutated) this.sendBroadcasts(result.broadcasts)

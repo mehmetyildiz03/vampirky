@@ -1,8 +1,21 @@
 import { createGame } from '../game/engine'
+import {
+  addPrivatePlayerNote,
+  createPrivateDeductionState,
+  removePrivatePlayerNote,
+  setDeductionMark,
+  type PrivateDeductionState,
+} from '../game/deduction'
+import {
+  PHASE_DURATIONS_SECONDS,
+  isValidPhaseDuration,
+  type PhaseDurations,
+} from '../game/timing'
 import type { GameState, PlayerSeed } from '../game/types'
 import type {
   ClientGameCommand,
   ClientLobbyCommand,
+  ClientPrivateCommand,
   CommandAcceptedMessage,
   CommandRejectedMessage,
   LobbySnapshot,
@@ -10,7 +23,10 @@ import type {
   RoomSnapshotMessage,
 } from './protocol'
 import { AuthoritativeRoom } from './roomRuntime'
-import type { ViewerGameSnapshot } from './snapshot'
+import type {
+  ViewerGameSnapshot,
+  ViewerPrivateDeductionSnapshot,
+} from './snapshot'
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const MIN_PLAYERS = 6
@@ -21,6 +37,7 @@ interface SessionRecord {
   token: string
   playerId: number
   acceptedRequests: Map<string, CommandAcceptedMessage>
+  privateDeduction: PrivateDeductionState | null
 }
 
 interface LobbyPlayerRecord {
@@ -34,6 +51,7 @@ interface LobbyRecord {
   hostPlayerId: number
   nextPlayerId: number
   revision: number
+  phaseDurations: PhaseDurations
   players: LobbyPlayerRecord[]
 }
 
@@ -153,6 +171,7 @@ export class RoomSessionService {
       hostPlayerId,
       nextPlayerId: 2,
       revision: 0,
+      phaseDurations: { ...PHASE_DURATIONS_SECONDS },
       players: [{
         id: hostPlayerId,
         name: hostName,
@@ -375,6 +394,45 @@ export class RoomSessionService {
       }
     }
 
+    if (command.type === 'lobby.duration') {
+      if (session.playerId !== lobby.hostPlayerId) {
+        return this.rejectRoomCommand(
+          room,
+          session,
+          command.requestId,
+          'not_authorized',
+          'Only the host can change lobby timing.',
+        )
+      }
+      if (!isValidPhaseDuration(command.key, command.seconds)) {
+        return this.rejectRoomCommand(
+          room,
+          session,
+          command.requestId,
+          'invalid_payload',
+          'Invalid phase duration.',
+        )
+      }
+
+      lobby.phaseDurations = {
+        ...lobby.phaseDurations,
+        [command.key]: command.seconds,
+      }
+      lobby.players = lobby.players.map((player) => ({
+        ...player,
+        ready: false,
+      }))
+      lobby.revision += 1
+      const accepted = this.accept(command.requestId, lobby.revision)
+      session.acceptedRequests.set(command.requestId, accepted)
+      return {
+        response: accepted,
+        message: this.messageForRoomPlayer(room, session.playerId),
+        mutated: true,
+        broadcasts: this.broadcastsForRoom(room),
+      }
+    }
+
     if (session.playerId !== lobby.hostPlayerId) {
       return this.rejectRoomCommand(
         room,
@@ -409,7 +467,15 @@ export class RoomSessionService {
       createGame(seeds),
       startRevision,
       lobby.hostPlayerId,
+      Date.now(),
+      lobby.phaseDurations,
     )
+    for (const roomSession of room.sessionsByToken.values()) {
+      roomSession.privateDeduction = createPrivateDeductionState(
+        roomSession.playerId,
+        seeds.map((seed) => seed.id),
+      )
+    }
     room.lobby = null
     const accepted = this.accept(command.requestId, startRevision)
     session.acceptedRequests.set(command.requestId, accepted)
@@ -419,6 +485,97 @@ export class RoomSessionService {
       message: this.messageForRoomPlayer(room, session.playerId),
       mutated: true,
       broadcasts: this.broadcastsForRoom(room),
+    }
+  }
+
+  dispatchPrivate(
+    sessionToken: string,
+    command: ClientPrivateCommand,
+  ): SessionDispatchResult {
+    const { room, session } = this.requireSession(sessionToken)
+    if (!room.runtime || !session.privateDeduction) {
+      return this.rejectRoomCommand(
+        room,
+        session,
+        command.requestId,
+        'invalid_phase',
+        'Private deductions are available only during an active game.',
+      )
+    }
+
+    const duplicate = session.acceptedRequests.get(command.requestId)
+    if (duplicate) {
+      return {
+        response: duplicate,
+        message: this.messageForRoomPlayer(room, session.playerId),
+        mutated: false,
+        broadcasts: [],
+      }
+    }
+
+    if (command.baseRevision > currentRevision(room)) {
+      return this.rejectRoomCommand(
+        room,
+        session,
+        command.requestId,
+        'stale_revision',
+        'Client revision is ahead of the authoritative room.',
+      )
+    }
+
+    const playerIds = room.playerIds
+    if (!playerIds.has(command.targetId) || command.targetId === session.playerId) {
+      return this.rejectRoomCommand(
+        room,
+        session,
+        command.requestId,
+        'invalid_target',
+        'Invalid private deduction target.',
+      )
+    }
+
+    if (command.type === 'deduction.mark') {
+      session.privateDeduction = setDeductionMark(
+        session.privateDeduction,
+        command.targetId,
+        command.mark,
+      )
+    } else if (command.type === 'deduction.note.add') {
+      const normalized = command.text.trim()
+      if (!normalized || normalized.length > 220) {
+        return this.rejectRoomCommand(
+          room,
+          session,
+          command.requestId,
+          'invalid_payload',
+          'Private notes must contain 1 to 220 characters.',
+        )
+      }
+      session.privateDeduction = addPrivatePlayerNote(
+        session.privateDeduction,
+        command.targetId,
+        room.runtime.snapshotFor(session.playerId).round,
+        normalized,
+      )
+    } else {
+      session.privateDeduction = removePrivatePlayerNote(
+        session.privateDeduction,
+        command.targetId,
+        command.noteId,
+      )
+    }
+
+    const accepted = this.accept(command.requestId, currentRevision(room))
+    session.acceptedRequests.set(command.requestId, accepted)
+    return {
+      response: accepted,
+      message: this.messageForRoomPlayer(room, session.playerId),
+      mutated: true,
+      broadcasts: [{
+        sessionToken: session.token,
+        playerId: session.playerId,
+        message: this.messageForRoomPlayer(room, session.playerId),
+      }],
     }
   }
 
@@ -440,7 +597,10 @@ export class RoomSessionService {
   snapshotForSession(sessionToken: string): ViewerGameSnapshot {
     const { room, session } = this.requireSession(sessionToken)
     if (!room.runtime) throw new Error('Game has not started.')
-    return room.runtime.snapshotFor(session.playerId)
+    return this.withPrivateDeduction(
+      room.runtime.snapshotFor(session.playerId),
+      session.privateDeduction,
+    )
   }
 
   messageForSession(sessionToken: string): RoomSnapshotMessage {
@@ -480,6 +640,7 @@ export class RoomSessionService {
       minPlayers: MIN_PLAYERS,
       maxPlayers: MAX_PLAYERS,
       canStart,
+      phaseDurations: { ...lobby.phaseDurations },
       players: lobby.players.map((player) => ({
         id: player.id,
         name: player.name,
@@ -499,7 +660,10 @@ export class RoomSessionService {
       return {
         type: 'game.snapshot',
         revision,
-        snapshot: room.runtime.snapshotFor(playerId),
+        snapshot: this.withPrivateDeduction(
+          room.runtime.snapshotFor(playerId),
+          room.sessionsByToken.get(room.tokenByPlayerId.get(playerId) ?? '')?.privateDeduction ?? null,
+        ),
       }
     }
 
@@ -564,11 +728,36 @@ export class RoomSessionService {
       token,
       playerId,
       acceptedRequests: new Map(),
+      privateDeduction: room.runtime
+        ? createPrivateDeductionState(playerId, [...room.playerIds])
+        : null,
     }
     room.sessionsByToken.set(token, session)
     room.tokenByPlayerId.set(playerId, token)
     this.roomIdBySessionToken.set(token, room.roomId)
     return session
+  }
+
+  private withPrivateDeduction(
+    snapshot: ViewerGameSnapshot,
+    state: PrivateDeductionState | null,
+  ): ViewerGameSnapshot {
+    const privateDeduction: ViewerPrivateDeductionSnapshot = state
+      ? {
+          marks: { ...state.marks },
+          notes: Object.fromEntries(
+            Object.entries(state.notes).map(([playerId, notes]) => [
+              Number(playerId),
+              notes.map((note) => ({ ...note })),
+            ]),
+          ),
+        }
+      : { marks: {}, notes: {} }
+
+    return {
+      ...snapshot,
+      privateDeduction,
+    }
   }
 
   private reserveRoomId(requestedRoomId?: string): string {

@@ -1,6 +1,7 @@
 import type {
   ClientGameCommand,
   ClientLobbyCommand,
+  ClientPrivateCommand,
   ClientTransportMessage,
   ServerTransportMessage,
 } from './protocol'
@@ -75,6 +76,31 @@ function isClientLobbyCommand(value: unknown): value is ClientLobbyCommand {
   }
   if (value.type === 'lobby.start') return true
   if (value.type === 'lobby.ready') return typeof value.ready === 'boolean'
+  if (value.type === 'lobby.duration') {
+    return (
+      ['discussion', 'night', 'voting'].includes(String(value.key)) &&
+      isNonNegativeInteger(value.seconds)
+    )
+  }
+  return false
+}
+
+function isClientPrivateCommand(value: unknown): value is ClientPrivateCommand {
+  if (!isRecord(value) || !isString(value.type) || !hasCommandMeta(value)) {
+    return false
+  }
+  if (value.type === 'deduction.mark') {
+    return (
+      isNonNegativeInteger(value.targetId) &&
+      ['suspicious', 'uncertain', 'trusted'].includes(String(value.mark))
+    )
+  }
+  if (value.type === 'deduction.note.add') {
+    return isNonNegativeInteger(value.targetId) && isString(value.text)
+  }
+  if (value.type === 'deduction.note.remove') {
+    return isNonNegativeInteger(value.targetId) && isNonNegativeInteger(value.noteId)
+  }
   return false
 }
 
@@ -106,6 +132,12 @@ export function decodeClientTransportMessage(
 
   if (value.type === 'lobby.command') {
     return isClientLobbyCommand(value.command)
+      ? (value as unknown as ClientTransportMessage)
+      : null
+  }
+
+  if (value.type === 'private.command') {
+    return isClientPrivateCommand(value.command)
       ? (value as unknown as ClientTransportMessage)
       : null
   }

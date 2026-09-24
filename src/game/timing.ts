@@ -36,3 +36,13 @@ export function formatPhaseTime(totalSeconds: number): string {
 export function isPhaseTimeUrgent(seconds: number): boolean {
   return seconds > 0 && seconds <= 10
 }
+
+export function isValidPhaseDuration(
+  key: PhaseDurationKey,
+  seconds: number,
+): boolean {
+  if (!Number.isInteger(seconds)) return false
+  const rule = PHASE_DURATION_RULES[key]
+  if (seconds < rule.min || seconds > rule.max) return false
+  return (seconds - rule.min) % rule.step === 0
+}

@@ -15,6 +15,10 @@ import {
   withdrawClaim,
 } from '../game/engine'
 import { ROLE_DEFINITIONS } from '../game/roles'
+import {
+  PHASE_DURATIONS_SECONDS,
+  type PhaseDurations,
+} from '../game/timing'
 import type { GamePhase, GameState } from '../game/types'
 import type {
   ClientGameCommand,
@@ -28,12 +32,9 @@ import {
   type ViewerRuntimeMeta,
 } from './snapshot'
 
-export const SERVER_PHASE_DURATIONS_SECONDS: Partial<Record<GamePhase, number>> = {
+export const SERVER_FIXED_PHASE_DURATIONS_SECONDS: Partial<Record<GamePhase, number>> = {
   role_reveal: 60,
-  night: 40,
   dawn: 8,
-  discussion: 90,
-  voting: 30,
   resolution: 8,
 }
 
@@ -49,17 +50,20 @@ export class AuthoritativeRoom {
   private phaseReadyPlayerIds = new Set<number>()
   private phaseDeadlineAt: number | null
   private phaseDurationSeconds: number | null
+  private readonly phaseDurations: PhaseDurations
 
   constructor(
     initialState: GameState,
     initialRevision = 0,
     hostPlayerId = initialState.players[0]?.id ?? 0,
     now = Date.now(),
+    phaseDurations: PhaseDurations = PHASE_DURATIONS_SECONDS,
   ) {
     this.state = initialState
     this.revision = initialRevision
     this.hostPlayerId = hostPlayerId
-    const duration = SERVER_PHASE_DURATIONS_SECONDS[initialState.phase] ?? null
+    this.phaseDurations = { ...phaseDurations }
+    const duration = this.durationFor(initialState.phase)
     this.phaseDurationSeconds = duration
     this.phaseDeadlineAt = duration === null ? null : now + duration * 1000
   }
@@ -292,9 +296,16 @@ export class AuthoritativeRoom {
   private transitionTo(next: GameState, now: number): void {
     this.state = next
     this.phaseReadyPlayerIds.clear()
-    const duration = SERVER_PHASE_DURATIONS_SECONDS[next.phase] ?? null
+    const duration = this.durationFor(next.phase)
     this.phaseDurationSeconds = duration
     this.phaseDeadlineAt = duration === null ? null : now + duration * 1000
+  }
+
+  private durationFor(phase: GamePhase): number | null {
+    if (phase === 'night') return this.phaseDurations.night
+    if (phase === 'discussion') return this.phaseDurations.discussion
+    if (phase === 'voting') return this.phaseDurations.voting
+    return SERVER_FIXED_PHASE_DURATIONS_SECONDS[phase] ?? null
   }
 
   private allNightActionsSubmitted(): boolean {

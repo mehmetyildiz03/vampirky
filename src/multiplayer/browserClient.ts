@@ -1,12 +1,15 @@
 import type {
   ClientGameCommand,
   ClientLobbyCommand,
+  ClientPrivateCommand,
   ClientTransportMessage,
   LobbySnapshot,
   ServerTransportMessage,
 } from './protocol'
 import { decodeServerTransportMessage } from './wireCodec'
 import type { ViewerGameSnapshot } from './snapshot'
+import type { DeductionMark } from '../game/deduction'
+import type { PhaseDurationKey } from '../game/timing'
 import type { PlayerSeed } from '../game/types'
 
 export interface SessionIdentity {
@@ -51,6 +54,11 @@ type Listener = (event: BrowserClientEvent) => void
 type LobbyCommandInput =
   | { type: 'lobby.ready'; ready: boolean }
   | { type: 'lobby.start' }
+
+type PrivateCommandInput =
+  | { type: 'deduction.mark'; targetId: number; mark: DeductionMark }
+  | { type: 'deduction.note.add'; targetId: number; text: string }
+  | { type: 'deduction.note.remove'; targetId: number; noteId: number }
 
 type StripCommandMeta<T> = T extends { requestId: string; baseRevision: number }
   ? Omit<T, 'requestId' | 'baseRevision'>
@@ -205,6 +213,22 @@ export class BrowserMultiplayerClient {
     return this.sendLobbyCommand({ type: 'lobby.start' })
   }
 
+  setPhaseDuration(key: PhaseDurationKey, seconds: number): string {
+    return this.sendLobbyCommand({ type: 'lobby.duration', key, seconds })
+  }
+
+  setDeductionMark(targetId: number, mark: DeductionMark): string {
+    return this.sendPrivateCommand({ type: 'deduction.mark', targetId, mark })
+  }
+
+  addPrivateNote(targetId: number, text: string): string {
+    return this.sendPrivateCommand({ type: 'deduction.note.add', targetId, text })
+  }
+
+  removePrivateNote(targetId: number, noteId: number): string {
+    return this.sendPrivateCommand({ type: 'deduction.note.remove', targetId, noteId })
+  }
+
   markPhaseReady(): string {
     return this.sendCommand({ type: 'phase.ready' })
   }
@@ -224,6 +248,22 @@ export class BrowserMultiplayerClient {
     } as ClientGameCommand
     this.sendReadyMessage({
       type: 'game.command',
+      command: wireCommand,
+    })
+    return requestId
+  }
+
+  private sendPrivateCommand(
+    command: PrivateCommandInput,
+  ): string {
+    const requestId = crypto.randomUUID()
+    const wireCommand = {
+      ...command,
+      requestId,
+      baseRevision: this.revision,
+    } as ClientPrivateCommand
+    this.sendReadyMessage({
+      type: 'private.command',
       command: wireCommand,
     })
     return requestId

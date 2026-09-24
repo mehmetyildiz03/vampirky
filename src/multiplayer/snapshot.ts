@@ -1,3 +1,4 @@
+import type { DeductionMark, PrivatePlayerNote } from '../game/deduction'
 import {
   getChatAccess,
   getPrivatePlayerView,
@@ -19,6 +20,11 @@ import type {
   VoteResolution,
   Winner,
 } from '../game/types'
+
+export interface ViewerPrivateDeductionSnapshot {
+  marks: Record<number, DeductionMark>
+  notes: Record<number, PrivatePlayerNote[]>
+}
 
 export interface ViewerSelfSnapshot {
   id: number
@@ -83,6 +89,7 @@ export interface ViewerGameSnapshot {
   lastNight: PublicNightSnapshot | null
   lastVote: VoteResolution | null
   events: GameEvent[]
+  privateDeduction: ViewerPrivateDeductionSnapshot
   capabilities: ViewerCapabilities
   revealedRoles: RevealedRole[]
 }
@@ -185,6 +192,10 @@ export function createViewerSnapshot(
       : null,
     lastVote: state.lastVote ? { ...state.lastVote } : null,
     events: state.events.map((event) => ({ ...event })),
+    privateDeduction: {
+      marks: {},
+      notes: {},
+    },
     capabilities: buildCapabilities(state, viewerId, runtime),
     revealedRoles:
       state.phase === 'ended'
