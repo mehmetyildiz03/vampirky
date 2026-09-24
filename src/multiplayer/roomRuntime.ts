@@ -77,7 +77,7 @@ export class AuthoritativeRoom {
       this.state,
       playerId,
       this.revision,
-      this.runtimeMeta(),
+      this.runtimeMeta(Date.now()),
     )
   }
 
@@ -324,8 +324,9 @@ export class AuthoritativeRoom {
       : 0
   }
 
-  private runtimeMeta(): ViewerRuntimeMeta {
+  private runtimeMeta(now: number): ViewerRuntimeMeta {
     return {
+      serverNow: now,
       hostPlayerId: this.hostPlayerId,
       phaseDeadlineAt: this.phaseDeadlineAt,
       phaseDurationSeconds: this.phaseDurationSeconds,
@@ -362,18 +363,18 @@ export class AuthoritativeRoom {
 function classifyError(message: string): CommandRejectedMessage['code'] {
   const normalized = message.toLocaleLowerCase('en-US')
   if (
-    normalized.includes('phase') ||
-    normalized.includes('during the day') ||
-    normalized.includes('discussion')
-  ) {
-    return 'invalid_phase'
-  }
-  if (
     normalized.includes('only') ||
     normalized.includes('member') ||
     normalized.includes('dead players')
   ) {
     return 'not_authorized'
+  }
+  if (
+    normalized.includes('phase') ||
+    normalized.includes('during the day') ||
+    normalized.includes('discussion')
+  ) {
+    return 'invalid_phase'
   }
   if (normalized.includes('target')) return 'invalid_target'
   return 'invalid_payload'

@@ -49,13 +49,14 @@ import {
 } from './multiplayer/browserClient'
 import type { LobbySnapshot } from './multiplayer/protocol'
 import type { ViewerGameSnapshot } from './multiplayer/snapshot'
+import { NetworkGame } from './multiplayer/NetworkGame'
 
 type Screen =
   | 'home'
   | 'lobby'
   | 'multiplayer-entry'
   | 'multiplayer-lobby'
-  | 'multiplayer-role'
+  | 'multiplayer-game'
   | 'role'
   | 'night'
   | 'dawn'
@@ -297,7 +298,7 @@ export default function App() {
         setMultiplayerGame(event.snapshot)
         setMultiplayerLobby(null)
         setMultiplayerError('')
-        setScreen('multiplayer-role')
+        setScreen('multiplayer-game')
       } else if (event.type === 'error') {
         setMultiplayerError(event.message)
       }
@@ -667,8 +668,15 @@ export default function App() {
       : undefined) ??
     'Ali'
 
+  const visualScreen =
+    screen === 'multiplayer-game' && multiplayerGame
+      ? ['dawn', 'discussion', 'voting', 'resolution', 'ended'].includes(multiplayerGame.phase)
+        ? 'day'
+        : 'night'
+      : screen
+
   return (
-    <div className={'app phase-' + screen}>
+    <div className={'app phase-' + visualScreen + (screen === 'multiplayer-game' ? ' network-session' : '')}>
       <VillageBackdrop /><Topbar name={topbarName} />
       {screen === 'home' && (
         <Home
@@ -698,10 +706,13 @@ export default function App() {
           onStart={() => multiplayerClient.startGame()}
         />
       )}
-      {screen === 'multiplayer-role' && multiplayerGame && (
-        <MultiplayerRoleReveal
+      {screen === 'multiplayer-game' && multiplayerGame && multiplayerClient && (
+        <NetworkGame
           snapshot={multiplayerGame}
-          onBack={leaveMultiplayerView}
+          client={multiplayerClient}
+          connectionState={multiplayerConnection}
+          error={multiplayerError}
+          onExit={leaveMultiplayerView}
         />
       )}
       {screen === 'lobby' && (
@@ -1093,42 +1104,6 @@ function NetworkLobby({
           </div>
         </div>
       </section>
-    </main>
-  )
-}
-
-function MultiplayerRoleReveal({
-  snapshot,
-  onBack,
-}: {
-  snapshot: ViewerGameSnapshot
-  onBack: () => void
-}) {
-  const visual = roleVisuals[snapshot.self.role]
-  const allies = snapshot.self.knownVampireIds
-    .map((id) => snapshot.players.find((player) => player.id === id)?.name)
-    .filter(Boolean)
-
-  return (
-    <main className="result-shell multiplayer-role-reveal">
-      <Brand />
-      <section className={'flow-card role-reveal-card role-' + snapshot.self.role}>
-        <small>SERVER TARAFINDAN DAĞITILAN ROLÜN</small>
-        <div className="role-emblem">{visual.icon}</div>
-        <h1>{visual.title}</h1>
-        <p>{visual.text}</p>
-        {allies.length > 0 && <div className="secret-line"><b>Diğer Vampir:</b> {allies.join(', ')}</div>}
-        <div className="privacy-note">Bu snapshot yalnızca senin oturumun için üretildi.</div>
-        <div className="network-role-proof">
-          <span>🔒</span>
-          <div>
-            <b>Gizli rol artık client GameState'inden gelmiyor</b>
-            <small>Oyun ekranlarının viewer snapshot modeline taşınması sıradaki katman.</small>
-          </div>
-        </div>
-        <button className="back" onClick={onBack}>← Multiplayer oturumundan çık</button>
-      </section>
-      <Lore />
     </main>
   )
 }

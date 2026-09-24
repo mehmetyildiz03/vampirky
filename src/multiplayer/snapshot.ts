@@ -55,6 +55,8 @@ export interface RevealedRole {
 }
 
 export interface ViewerRuntimeMeta {
+  serverNow: number
+  serverNow: number
   hostPlayerId: number
   phaseDeadlineAt: number | null
   phaseDurationSeconds: number | null
@@ -140,6 +142,7 @@ export function createViewerSnapshot(
   viewerId: number,
   revision = 0,
   runtime: ViewerRuntimeMeta = {
+    serverNow: Date.now(),
     hostPlayerId: state.players[0]?.id ?? 0,
     phaseDeadlineAt: null,
     phaseDurationSeconds: null,
@@ -157,6 +160,7 @@ export function createViewerSnapshot(
     phase: state.phase,
     round: state.round,
     winner: state.winner,
+    serverNow: runtime.serverNow,
     hostPlayerId: runtime.hostPlayerId,
     phaseDeadlineAt: runtime.phaseDeadlineAt,
     phaseDurationSeconds: runtime.phaseDurationSeconds,

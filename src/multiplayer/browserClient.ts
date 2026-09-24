@@ -314,6 +314,8 @@ export class BrowserMultiplayerClient {
     } else if (message.type === 'lobby.snapshot') {
       this.revision = message.snapshot.revision
       this.emit({ type: 'lobbySnapshot', snapshot: message.snapshot })
+    } else if (message.type === 'command.rejected') {
+      this.emit({ type: 'error', message: message.message })
     } else if (message.type === 'session.rejected') {
       this.emit({ type: 'error', message: message.message })
     }
