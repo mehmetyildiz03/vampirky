@@ -248,6 +248,7 @@ export function NetworkGame({
           <div className="network-side-tabs">
             <button
               className={sideTab === 'chat' ? 'active' : ''}
+              aria-pressed={sideTab === 'chat'}
               onClick={() => { setSideTab('chat'); setMobilePanelOpen(true) }}
             >
               ✉ Sohbet
@@ -255,6 +256,7 @@ export function NetworkGame({
             {(snapshot.phase === 'discussion' || snapshot.phase === 'voting') && (
               <button
                 className={sideTab === 'claims' ? 'active' : ''}
+                aria-pressed={sideTab === 'claims'}
                 onClick={() => { setSideTab('claims'); setMobilePanelOpen(true) }}
               >
                 ◇ İddialar
@@ -262,6 +264,7 @@ export function NetworkGame({
             )}
             <button
               className={sideTab === 'deduction' ? 'active' : ''}
+              aria-pressed={sideTab === 'deduction'}
               onClick={() => { setSideTab('deduction'); setMobilePanelOpen(true) }}
             >
               ⌘ Dedüksiyon
@@ -299,6 +302,7 @@ export function NetworkGame({
       <nav className="network-mobile-dock" aria-label="Oyun araçları">
         <button
           className={sideTab === 'chat' && mobilePanelOpen ? 'active' : ''}
+          aria-pressed={sideTab === 'chat' && mobilePanelOpen}
           onClick={() => {
             setSideTab('chat')
             setMobilePanelOpen(true)
@@ -309,6 +313,7 @@ export function NetworkGame({
         {(snapshot.phase === 'discussion' || snapshot.phase === 'voting') && (
           <button
             className={sideTab === 'claims' && mobilePanelOpen ? 'active' : ''}
+            aria-pressed={sideTab === 'claims' && mobilePanelOpen}
             onClick={() => {
               setSideTab('claims')
               setMobilePanelOpen(true)
@@ -319,6 +324,7 @@ export function NetworkGame({
         )}
         <button
           className={sideTab === 'deduction' && mobilePanelOpen ? 'active' : ''}
+          aria-pressed={sideTab === 'deduction' && mobilePanelOpen}
           onClick={() => {
             setSideTab('deduction')
             setMobilePanelOpen(true)
@@ -328,7 +334,7 @@ export function NetworkGame({
         </button>
       </nav>
 
-      {error && <div className="network-game-error">⚠ {error}</div>}
+      {error && <div className="network-game-error" role="alert">⚠ {error}</div>}
     </main>
   )
 }
@@ -449,6 +455,10 @@ function IntermissionPhase({
           deadlineAt={snapshot.phaseDeadlineAt}
           durationSeconds={snapshot.phaseDurationSeconds}
         />
+        <div className="network-intermission-ready-copy">
+          <span>{mode === 'dawn' ? 'Köy meydanına geçmeye hazır' : 'Sonraki tura hazır'}</span>
+          <b>{snapshot.phaseReadyCount}/{snapshot.phaseReadyRequired}</b>
+        </div>
         <div className="network-ready-progress intermission-progress">
           <span style={{ width: snapshot.phaseReadyRequired
             ? (snapshot.phaseReadyCount / snapshot.phaseReadyRequired * 100) + '%'
@@ -463,7 +473,7 @@ function IntermissionPhase({
             ? '✓ Devam için hazırsın'
             : mode === 'dawn' ? 'Köy Meydanına Geç' : 'Sonraki Geceye Geç'} <b>›</b>
         </button>
-        <small>{snapshot.phaseReadyCount}/{snapshot.phaseReadyRequired} hazır · süre dolunca otomatik ilerler</small>
+        <small>Süre dolunca otomatik ilerler.</small>
         {error && <div className="network-error">⚠ {error}</div>}
         <button className="network-text-button" onClick={onExit}>Oturumdan çık</button>
       </section>
@@ -542,12 +552,13 @@ function PlayerGrid({
               ].join(' ')}
               style={nightStyle}
               disabled={!canSelect}
+              aria-pressed={canSelect ? selectedTarget === player.id : undefined}
               onClick={() => canSelect && onSelect(player.id)}
             >
               <span className="network-avatar" style={{ '--accent': accent(player.id) } as React.CSSProperties}>
                 {player.name.charAt(0).toLocaleUpperCase('tr-TR')}
               </span>
-              <b>{player.name}</b>
+              <b title={player.name}>{player.name}</b>
               {latestVillageSpeech?.authorId === player.id && (
                 <span className="network-seat-speech" title={latestVillageSpeech.text}>
                   {latestVillageSpeech.text}
@@ -703,6 +714,7 @@ function NetworkChat({
           <button
             key={item}
             className={channel === item ? 'active' : ''}
+            aria-pressed={channel === item}
             onClick={() => setChannel(item)}
           >
             {channelIcon(item)} {channelName(item)}

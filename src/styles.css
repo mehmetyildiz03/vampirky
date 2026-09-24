@@ -1428,3 +1428,106 @@
     flex-direction:column;
   }
 }
+
+
+/* P3.13 — final production responsive + accessibility hardening */
+.network-player-card>b{
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.network-seat-speech{
+  left:50%;
+  transform:translateX(-50%);
+  max-width:min(170px,calc(100vw - 32px));
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.network-game-discussion .network-side-tabs,
+.network-game-voting .network-side-tabs{
+  grid-template-columns:repeat(3,minmax(0,1fr));
+}
+.network-channel-tabs{
+  grid-template-columns:repeat(auto-fit,minmax(84px,1fr));
+}
+.network-intermission-ready-copy{
+  margin-top:12px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  color:#8d8173;
+  font-size:9px;
+  text-align:left;
+}
+.network-intermission-ready-copy b{
+  color:#d4b27d;
+  font-variant-numeric:tabular-nums;
+}
+.network-game button:focus-visible,
+.network-game textarea:focus-visible,
+.network-game input:focus-visible,
+.network-game select:focus-visible,
+.network-role-screen button:focus-visible,
+.network-intermission button:focus-visible,
+.network-end button:focus-visible{
+  outline:2px solid #d1a467;
+  outline-offset:2px;
+}
+@media(max-width:960px){
+  .network-game-side{
+    visibility:hidden;
+    pointer-events:none;
+    transition:transform .22s ease,visibility 0s linear .22s;
+  }
+  .network-game-side.mobile-open{
+    visibility:visible;
+    pointer-events:auto;
+    transition:transform .22s ease;
+  }
+  .network-mobile-backdrop{
+    visibility:hidden;
+  }
+  .network-mobile-backdrop.open{
+    visibility:visible;
+  }
+  .network-mobile-dock{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .network-game-discussion .network-mobile-dock,
+  .network-game-voting .network-mobile-dock{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+  .network-game-error{
+    left:8px;
+    right:8px;
+    bottom:72px;
+    max-width:none;
+  }
+  .network-mobile-sheet-head{
+    grid-template-columns:1fr auto 44px;
+  }
+  .network-mobile-sheet-head>button{
+    min-width:44px;
+    min-height:44px;
+  }
+  .network-side-tabs button,
+  .network-channel-tabs button,
+  .network-chat-compose button,
+  .network-claim-form select,
+  .network-claim-form input,
+  .network-claim-form>button,
+  .network-deduction-tabs button,
+  .network-mark-buttons button{
+    min-height:44px;
+  }
+}
+@media(max-width:560px){
+  .network-seat-speech{
+    max-width:min(132px,calc(100vw - 24px));
+  }
+  .network-channel-tabs{
+    grid-template-columns:repeat(auto-fit,minmax(88px,1fr));
+  }
+}
