@@ -1995,3 +1995,69 @@
     height:38px;
   }
 }
+
+
+/* P3.19 — compact cinematic flow for short desktop viewports */
+@media(min-width:961px) and (max-height:820px){
+  .network-role-screen,
+  .network-intermission,
+  .network-end{
+    padding-top:80px;
+    padding-bottom:12px;
+  }
+  .network-role-card.network-flow-card{
+    padding-top:24px;
+    padding-bottom:20px;
+  }
+  .network-role-card .network-role-emblem{
+    width:126px;
+    height:126px;
+    margin:14px auto 6px;
+    font-size:62px;
+  }
+  .network-role-card h1{
+    font-size:50px;
+    margin:6px 0 10px;
+  }
+  .network-role-card>.network-server-timer{
+    margin:10px auto;
+  }
+  .network-role-card .network-ready-progress{
+    margin:8px 0 4px;
+  }
+  .network-role-card .start{
+    margin-top:8px;
+  }
+  .network-role-card footer{
+    margin-top:8px;
+  }
+  .network-end-card.network-flow-card{
+    padding-top:20px;
+    padding-bottom:20px;
+  }
+  .network-end-card .network-end-icon{
+    width:88px;
+    height:88px;
+    margin:8px auto 4px;
+    font-size:44px;
+  }
+  .network-end-card h1{
+    font-size:58px;
+  }
+  .network-end-card>p{
+    margin:6px auto 12px;
+  }
+  .network-end-role-head{
+    padding:6px 2px 5px;
+  }
+  .network-revealed-grid{
+    gap:6px;
+    margin:5px 0 12px;
+  }
+  .network-revealed-grid>div{
+    padding:7px;
+  }
+  .network-end-card .start{
+    min-height:56px;
+  }
+}
