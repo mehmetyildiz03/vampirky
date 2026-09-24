@@ -1518,6 +1518,14 @@ function Day({
     (total, count) => total + count,
     0,
   )
+  const latestVillageSpeech = [...visibleChatMessages]
+    .reverse()
+    .find(
+      (message) =>
+        message.channel === 'village' &&
+        message.round === game.round &&
+        message.phase === 'discussion',
+    )
 
   const openSourceMessage = (messageId: number) => {
     const source = game.chatMessages.find((message) => message.id === messageId)
@@ -1558,6 +1566,14 @@ function Day({
                 <span className="avatar player-avatar" style={{ '--accent': player.accent } as CSSProperties}>{player.initial}</span>
                 <b>{player.name}</b>
                 {!alive && <em>☠</em>}
+                {alive && latestVillageSpeech?.authorId === player.id && (
+                  <span
+                    className="seat-speech-bubble"
+                    title={latestVillageSpeech.text}
+                  >
+                    {latestVillageSpeech.text}
+                  </span>
+                )}
                 {privateMark !== 'uncertain' && (
                   <small
                     className={'private-deduction-mark ' + privateMark}
@@ -2803,8 +2819,8 @@ function GhostTransition({
       <section className="ghost-transition-main">
         <Brand />
         <div className="ghost-orb" aria-hidden>☠</div>
-        <small className="ghost-kicker">HAYALET MODU</small>
-        <h1>Artık Hayaletsin.</h1>
+        <small className="ghost-kicker">OYUNDAN ELENDİN · HAYALET MODU</small>
+        <h1>Oyun senin için bitmedi.</h1>
         <div className="ghost-self">
           <span className="avatar big" style={{ '--accent': portrait.accent } as CSSProperties}>
             {portrait.initial}
@@ -2815,13 +2831,13 @@ function GhostTransition({
           </div>
         </div>
         <p>
-          Oyunu izlemeye devam edebilirsin. Yaşayanların kararlarını etkileyemezsin;
-          Hayalet sohbetinde diğer ölü oyuncularla konuşabilirsin.
+          Artık oy kullanamaz veya yaşayanların kararlarını etkileyemezsin.
+          Maçı izlemeye ve Hayalet kanalında diğer ölü oyuncularla konuşmaya devam edebilirsin.
         </p>
         <div className="ghost-rules">
-          <div><span>⌂</span><b>Köy Sohbeti</b><small>Okuyabilirsin · yazamazsın</small></div>
-          <div><span>☠</span><b>Hayalet Sohbeti</b><small>Okuyabilir ve yazabilirsin</small></div>
-          <div><span>🦇</span><b>Vampir Sohbeti</b><small>Artık erişilemez</small></div>
+          <div><span>⌂</span><b>Köyü İzle</b><small>Köy sohbetini okuyabilirsin</small></div>
+          <div className="primary"><span>☠</span><b>Hayalet Sohbeti</b><small>Diğer ölülerle konuşabilirsin</small></div>
+          <div><span>⛔</span><b>Karar Yok</b><small>Oy ve gece aksiyonu kullanamazsın</small></div>
         </div>
         <button className="start ghost-continue" onClick={onContinue}>
           {cause === 'night' ? 'Sabahı İzle' : 'Oylama Sonucunu İzle'} <b>›</b>
@@ -2912,18 +2928,35 @@ function Voting({
           <PhaseTimer seconds={votingSeconds} label="Oylama" />
         </div>
         <h1>{self?.alive ? 'Köyden kimi göndermek istiyorsun?' : 'Oylamayı hayalet olarak izliyorsun.'}</h1>
+        {self?.alive && (
+          <p className="voting-guidance">
+            Bir oyuncu seç. Oyun yalnızca seçimini gönderdiğinde kayda geçer.
+          </p>
+        )}
         <div className="vote-grid">
           {targets.map((target) => {
             const visual = players.find((player) => player.id === target.id)!
             return <button key={target.id} disabled={!self?.alive} className={selected === target.id ? 'picked' : ''} onClick={() => self?.alive && setSelected(target.id)}><span className="avatar" style={{ '--accent': visual.accent } as CSSProperties}>{visual.initial}</span><b>{target.name}</b><em>{selected === target.id ? '✓' : '○'}</em></button>
           })}
         </div>
+        {self?.alive && (
+          <div className={'voting-selection ' + (selected ? 'has-selection' : '')}>
+            <small>SEÇİMİN</small>
+            <b>
+              {selected
+                ? players.find((player) => player.id === selected)?.name ?? 'Oyuncu'
+                : 'Henüz oyuncu seçmedin'}
+            </b>
+          </div>
+        )}
         <p className="phase-timeout-note">
           {self?.alive
-            ? 'Süre dolduğunda kilitlenmemiş oy kullanılmamış sayılır.'
+            ? 'Süre dolduğunda gönderilmemiş oy kullanılmamış sayılır.'
             : 'Süre dolduğunda oylama otomatik sonuçlanır.'}
         </p>
-        <button className="start" disabled={Boolean(self?.alive) && selected === null} onClick={onResolve}>{self?.alive ? 'Oyumu Kilitle' : 'Oylama Sonucunu Gör'} <b>›</b></button>
+        <button className="start voting-submit" disabled={Boolean(self?.alive) && selected === null} onClick={onResolve}>
+          {self?.alive ? 'Oyumu Kullan' : 'Oylama Sonucunu Gör'} <b>›</b>
+        </button>
       </section>
     </main>
   )
@@ -2937,12 +2970,26 @@ function VoteResult({ game, onContinue }: { game: GameState; onContinue: () => v
   return (
     <main className="result-shell">
       <Brand />
-      <section className="flow-card vote-result-card">
-        <small>KÖY KARARINI VERDİ</small>
-        <h1>{eliminated ? eliminated.name : 'Kimse gönderilmedi'}</h1>
+      <section className={'flow-card vote-result-card ' + (game.lastVote?.tied ? 'tied' : 'eliminated')}>
+        <div className="vote-result-kicker"><span>🗳</span><b>{game.round}. GÜN</b><em>Oylama Sonucu</em></div>
         <div className="result-symbol">{game.lastVote?.tied ? '⚖' : '🗳'}</div>
-        <p>{game.lastVote?.tied ? 'Oylar eşit kaldı. Bu gün eleme olmadı.' : 'Rolü şimdilik açıklanmadı. Gerçek, maç sonunda ortaya çıkacak.'}</p>
-        <button className="start" onClick={onContinue}>Yeni Geceye Geç <b>›</b></button>
+        <h1>{eliminated ? eliminated.name : 'Kimse gönderilmedi'}</h1>
+        {eliminated && (
+          <div className="vote-result-player">
+            <span className="avatar big" style={{ '--accent': eliminated.accent } as CSSProperties}>
+              {eliminated.initial}
+            </span>
+            <div><b>{eliminated.name}</b><small>Köyden gönderildi</small></div>
+          </div>
+        )}
+        <p>
+          {game.lastVote?.tied
+            ? 'Oylar eşit kaldı. Bu gün kimse elenmedi.'
+            : 'Rolü açıklanmadı. Gerçek rolü yalnızca oyun sonunda ortaya çıkacak.'}
+        </p>
+        <button className="start vote-result-continue" onClick={onContinue}>
+          Yeni Geceye Geç <b>›</b>
+        </button>
       </section>
     </main>
   )
@@ -2952,10 +2999,12 @@ function EndScreen({ game, onAgain, onHome }: { game: GameState; onAgain: () => 
   return (
     <main className="end-screen">
       <Brand />
-      <section className="panel end-panel">
-        <small>KAZANAN</small>
+      <section className={'panel end-panel winner-' + game.winner}>
+        <div className="end-winner-kicker"><span>✦</span><b>OYUN TAMAMLANDI</b><span>✦</span></div>
+        <small>KAZANAN TARAF</small>
         <h1>{game.winner === 'vampire' ? 'VAMPİRLER' : 'KÖYLÜLER'}</h1>
-        <p>Perde kalktı. Artık tüm gerçek roller görülebilir.</p>
+        <p>{game.round} tur sonunda perde kalktı. Tüm gerçek roller artık açık.</p>
+        <div className="end-role-heading"><b>Gerçek Roller</b><small>Oyun boyunca gizli tutulan roller</small></div>
         <div className="end-roles">
           {game.players.map((player) => {
             const visual = roleVisuals[player.secretRole]
