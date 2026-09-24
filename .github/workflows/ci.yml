@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build production backend image
-        run: docker build -t vampirky-backend:ci .
+        run: docker build -f Railway.Dockerfile -t vampirky-backend:ci .
       - name: Start backend with persistent volume
         run: |
           mkdir -p "$RUNNER_TEMP/vampirky-state"
