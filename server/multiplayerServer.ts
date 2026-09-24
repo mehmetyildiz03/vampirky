@@ -5,6 +5,7 @@ import {
   type ServerResponse,
 } from 'node:http'
 import { randomUUID } from 'node:crypto'
+import { JsonRoomStateStore } from './fileRoomStateStore'
 import { WebSocketServer, type RawData, type WebSocket } from 'ws'
 import { createGame } from '../src/game/engine'
 import type { PlayerSeed } from '../src/game/types'
@@ -19,6 +20,7 @@ export interface MultiplayerServerOptions {
   port?: number
   allowedOrigins?: string[]
   sessions?: RoomSessionService
+  persistencePath?: string | null
 }
 
 export interface RunningMultiplayerServer {
@@ -115,6 +117,10 @@ export function createMultiplayerServer(
   ]
   const sessions = options.sessions ?? new RoomSessionService()
   const gateway = new RoomGateway(sessions)
+  const persistence = options.persistencePath
+    ? new JsonRoomStateStore(options.persistencePath)
+    : null
+  let persistenceInitialized = false
 
   const httpServer = createServer(async (request, response) => {
     const allowedOrigin = originAllowed(request, allowedOrigins)
@@ -142,7 +148,10 @@ export function createMultiplayerServer(
       const url = new URL(request.url ?? '/', 'http://server.local')
 
       if (request.method === 'GET' && url.pathname === '/health') {
-        json(response, 200, { ok: true }, allowedOrigin)
+        json(response, 200, {
+          ok: true,
+          persistence: Boolean(persistence),
+        }, allowedOrigin)
         return
       }
 
@@ -249,6 +258,16 @@ export function createMultiplayerServer(
     sessions,
     gateway,
     async listen() {
+      if (persistence && !persistenceInitialized) {
+        const persisted = await persistence.load()
+        if (persisted) sessions.restorePersistedState(persisted)
+        sessions.setPersistenceListener((state) => persistence.scheduleSave(state))
+
+        // Apply any phase deadline that expired while the process was offline.
+        sessions.tick(Date.now())
+        persistenceInitialized = true
+      }
+
       await new Promise<void>((resolve, reject) => {
         httpServer.once('error', reject)
         httpServer.listen(configuredPort, host, () => {
@@ -272,14 +291,16 @@ export function createMultiplayerServer(
         port,
         httpUrl,
         websocketUrl: `ws://${host}:${port}/ws`,
-        close: () =>
-          new Promise<void>((resolve, reject) => {
-            clearInterval(phaseTicker)
-            for (const client of websocketServer.clients) client.terminate()
+        close: async () => {
+          clearInterval(phaseTicker)
+          for (const client of websocketServer.clients) client.terminate()
+          await new Promise<void>((resolve, reject) => {
             websocketServer.close(() => {
               httpServer.close((error) => error ? reject(error) : resolve())
             })
-          }),
+          })
+          await persistence?.flush()
+        },
       }
     },
   }
