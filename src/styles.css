@@ -1637,3 +1637,361 @@
     padding-bottom:118px;
   }
 }
+
+
+/* P3.18 — align production flow screens with the cinematic Quick Game language */
+.network-flow-screen{
+  overflow-x:hidden;
+}
+.network-flow-screen::before{
+  content:"";
+  position:fixed;
+  z-index:-1;
+  inset:58px 0 0;
+  pointer-events:none;
+  background:
+    radial-gradient(circle at 50% 28%,#c27b2a18,transparent 27%),
+    linear-gradient(180deg,#05070a10,#0304058a 78%);
+}
+.network-flow-card{
+  position:relative;
+  overflow:hidden;
+  border-width:2px;
+  border-color:#745335;
+  background:
+    linear-gradient(155deg,#12151bf4,#08090cf4),
+    radial-gradient(circle at 50% 0%,#b77a2a12,transparent 48%);
+  box-shadow:
+    0 0 0 3px #090705,
+    0 28px 76px #000d,
+    inset 0 0 70px #c98c4208;
+}
+.network-flow-card::before{
+  content:"";
+  position:absolute;
+  pointer-events:none;
+  inset:0;
+  background:
+    linear-gradient(90deg,transparent,#d39b5220 50%,transparent) top/100% 1px no-repeat,
+    radial-gradient(circle at 50% -10%,#e2ad5a12,transparent 36%);
+}
+.network-flow-kicker{
+  position:relative;
+  z-index:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  min-height:24px;
+  color:#a98253;
+  font-size:9px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+}
+.network-flow-kicker span{
+  color:#d0a363;
+  font-size:11px;
+}
+.network-flow-kicker b{
+  color:#d7b47d;
+}
+.network-flow-kicker em{
+  padding-left:9px;
+  border-left:1px solid #57432f;
+  color:#8d7961;
+  font-style:normal;
+}
+.network-role-card.network-flow-card{
+  width:min(650px,94vw);
+  padding:30px 34px 26px;
+}
+.network-role-card .network-role-emblem{
+  width:142px;
+  height:142px;
+  margin:20px auto 10px;
+  font-size:70px;
+  border:2px solid #9b7444;
+  background:radial-gradient(circle at 50% 42%,#2b3545,#0b0d12 68%);
+  box-shadow:0 0 36px #000,0 0 32px #b68b4533;
+}
+.network-role-card.role-vampire .network-role-emblem{
+  border-color:#873c42;
+  background:radial-gradient(circle at 50% 42%,#3a161b,#0b0d12 68%);
+  box-shadow:0 0 36px #000,0 0 42px #b51f3260;
+}
+.network-role-card.role-seer .network-role-emblem{
+  border-color:#3f7893;
+  background:radial-gradient(circle at 50% 42%,#132b38,#0b0d12 68%);
+  box-shadow:0 0 36px #000,0 0 42px #46bfe657;
+}
+.network-role-card.role-protector .network-role-emblem{
+  border-color:#967440;
+  background:radial-gradient(circle at 50% 42%,#332814,#0b0d12 68%);
+  box-shadow:0 0 36px #000,0 0 42px #cda04c50;
+}
+.network-role-card h1{
+  font-size:clamp(40px,5vw,62px);
+  margin:8px 0 12px;
+}
+.network-role-card>p{
+  max-width:520px;
+  margin:0 auto;
+  color:#c2b29d;
+  font-size:13px;
+}
+.network-role-privacy{
+  margin:12px auto 2px;
+  padding:10px 12px;
+  max-width:500px;
+  border:1px solid #4b4035;
+  background:#0d1015c9;
+  color:#8f867b;
+  font-size:10px;
+  line-height:1.45;
+}
+.network-secret-allies{
+  max-width:500px;
+  margin:13px auto 0;
+  padding:10px 12px;
+}
+.network-intermission-card.network-flow-card{
+  width:min(590px,92vw);
+  padding:28px 34px 26px;
+}
+.network-intermission.dawn .network-flow-card{
+  border-color:#8b6038;
+  background:
+    radial-gradient(circle at 50% 9%,#d78a331d,transparent 38%),
+    linear-gradient(155deg,#17130ff4,#08090cf4 68%);
+}
+.network-intermission.resolution .network-flow-card{
+  border-color:#704839;
+  background:
+    radial-gradient(circle at 50% 9%,#9b42251c,transparent 38%),
+    linear-gradient(155deg,#15100ef4,#08090cf4 68%);
+}
+.network-intermission-card .network-intermission-icon{
+  width:112px;
+  height:112px;
+  margin:18px auto 7px;
+  font-size:52px;
+  border:2px solid #8f683e;
+  background:radial-gradient(circle,#2b2117,#0d0e11 68%);
+  box-shadow:0 0 40px #000,0 0 30px #ba74302e;
+}
+.network-intermission-card h1{
+  max-width:500px;
+  margin:7px auto 12px;
+  font-size:clamp(34px,4vw,52px);
+  line-height:1.04;
+}
+.network-intermission-player{
+  width:min(380px,90%);
+  margin:18px auto;
+  padding:13px 16px;
+  grid-template-columns:64px 1fr;
+  gap:13px;
+  text-align:left;
+  border:1px solid #664532;
+  background:linear-gradient(90deg,#1d1210,#111317);
+  box-shadow:inset 3px 0 0 #8d4c3c;
+}
+.network-intermission-player .network-avatar{
+  width:64px;
+  height:64px;
+  font-size:22px;
+}
+.network-intermission-player b{
+  font-size:18px;
+}
+.network-intermission-player small{
+  color:#ad6e67;
+}
+.network-intermission-card>p{
+  max-width:500px;
+  margin:12px auto;
+  color:#b9aa97;
+}
+.network-intermission-ready-copy{
+  max-width:500px;
+  margin-left:auto;
+  margin-right:auto;
+}
+.network-intermission-card .network-ready-progress{
+  max-width:500px;
+  margin-left:auto;
+  margin-right:auto;
+}
+.network-end{
+  align-items:start;
+  padding-top:100px;
+}
+.network-end-card.network-flow-card{
+  width:min(1120px,94vw);
+  padding:28px 30px 30px;
+}
+.network-end-card.winner-vampire{
+  border-color:#713840;
+  background:
+    radial-gradient(circle at 50% 5%,#a7233228,transparent 38%),
+    linear-gradient(155deg,#151014f4,#08090cf4 68%);
+}
+.network-end-card.winner-village{
+  border-color:#806137;
+  background:
+    radial-gradient(circle at 50% 5%,#bf872b24,transparent 38%),
+    linear-gradient(155deg,#17130df4,#08090cf4 68%);
+}
+.network-end-card .network-end-icon{
+  width:108px;
+  height:108px;
+  margin:13px auto 5px;
+  font-size:52px;
+  border-width:2px;
+}
+.network-end-card.winner-vampire .network-end-icon{
+  border-color:#803943;
+  background:#241014;
+  box-shadow:0 0 42px #a51f3452;
+}
+.network-end-card.winner-village .network-end-icon{
+  border-color:#8f6d38;
+  background:#241c0f;
+  box-shadow:0 0 42px #b67f2c45;
+}
+.network-end-card h1{
+  margin:2px 0 5px;
+  font-size:clamp(44px,6vw,76px);
+  line-height:1;
+  letter-spacing:.04em;
+}
+.network-end-card.winner-vampire h1{color:#d4555e}
+.network-end-card.winner-village h1{color:#d6ae63}
+.network-end-card>p{
+  margin:9px auto 20px;
+  max-width:650px;
+  color:#aa9d8c;
+}
+.network-end-card>p b{
+  color:#dac4a2;
+}
+.network-end-role-head{
+  max-width:none;
+  margin:0 0 8px;
+  padding:10px 2px 8px;
+  border-top:1px solid #392e25;
+  text-align:left;
+}
+.network-revealed-grid{
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+  margin:8px 0 20px;
+}
+.network-revealed-grid>div{
+  min-width:0;
+  display:grid;
+  grid-template-columns:48px minmax(0,1fr);
+  grid-template-areas:
+    "avatar body"
+    "avatar status";
+  align-items:center;
+  justify-content:initial;
+  column-gap:9px;
+  row-gap:2px;
+  padding:10px;
+  text-align:left;
+  border-color:#3d352d;
+  background:linear-gradient(145deg,#111419,#0d1014);
+}
+.network-revealed-grid>div>.network-avatar{
+  grid-area:avatar;
+  width:46px;
+  height:46px;
+}
+.network-revealed-grid>div>div{
+  grid-area:body;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+}
+.network-revealed-grid>div>div b{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#dbc5a5;
+  font-size:11px;
+}
+.network-revealed-grid>div>div span{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#b49669;
+  font-size:9px;
+}
+.network-revealed-grid>div>small{
+  grid-area:status;
+  color:#777169;
+  font-size:7px;
+  letter-spacing:.08em;
+}
+.network-revealed-grid>div.alive{
+  border-color:#68573b;
+}
+.network-revealed-grid>div.dead{
+  opacity:.58;
+  filter:grayscale(.72);
+}
+.network-revealed-grid>div.self{
+  box-shadow:inset 0 -2px 0 #4d7891;
+}
+.network-end-card .start{
+  width:min(340px,100%);
+  margin:0 auto;
+}
+@media(max-width:900px){
+  .network-revealed-grid{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+}
+@media(max-width:650px){
+  .network-role-card.network-flow-card,
+  .network-intermission-card.network-flow-card{
+    padding:22px 14px;
+  }
+  .network-role-card .network-role-emblem{
+    width:112px;
+    height:112px;
+    font-size:56px;
+  }
+  .network-intermission-card .network-intermission-icon{
+    width:88px;
+    height:88px;
+    font-size:40px;
+  }
+  .network-intermission-player{
+    width:100%;
+  }
+  .network-end{
+    padding:80px 8px 24px;
+  }
+  .network-end-card.network-flow-card{
+    padding:20px 10px 22px;
+  }
+  .network-end-card .network-end-icon{
+    width:82px;
+    height:82px;
+    font-size:39px;
+  }
+  .network-revealed-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:6px;
+  }
+  .network-revealed-grid>div{
+    grid-template-columns:40px minmax(0,1fr);
+    padding:8px 7px;
+  }
+  .network-revealed-grid>div>.network-avatar{
+    width:38px;
+    height:38px;
+  }
+}

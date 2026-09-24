@@ -358,8 +358,9 @@ function RoleRevealPhase({
     .filter(Boolean)
 
   return (
-    <main className="network-role-screen">
-      <section className={'network-role-card role-' + snapshot.self.role}>
+    <main className="network-role-screen network-flow-screen">
+      <section className={'network-role-card network-flow-card role-' + snapshot.self.role}>
+        <div className="network-flow-kicker"><span>✦</span><b>GİZLİ ROL</b><span>✦</span></div>
         <small>BU ROL YALNIZCA SANA GÖSTERİLİR</small>
         <div className="network-role-emblem">{visual.icon}</div>
         <h1>{visual.title}</h1>
@@ -370,6 +371,9 @@ function RoleRevealPhase({
             <span>{allies.join(', ')}</span>
           </div>
         )}
+        <div className="network-role-privacy">
+          ◌ Gerçek rolün oyun sonuna kadar diğer oyunculara açıklanmaz.
+        </div>
         <ServerPhaseTimer
           serverNow={snapshot.serverNow}
           deadlineAt={snapshot.phaseDeadlineAt}
@@ -418,18 +422,22 @@ function IntermissionPhase({
 
   const title = mode === 'dawn'
     ? eliminated === null
-      ? 'Gece Sessiz Geçti'
-      : playerName(snapshot, eliminated) + ' artık aramızda değil'
+      ? 'Gece sessiz geçti.'
+      : 'Köy bir eksik uyandı.'
     : snapshot.lastVote?.tied
-      ? 'Oylar Eşitlendi'
+      ? 'Oylar eşitlendi.'
       : eliminated === null
-        ? 'Köy Kimseyi Göndermedi'
-        : playerName(snapshot, eliminated) + ' köyden gönderildi'
+        ? 'Kimse gönderilmedi.'
+        : 'Köy kararını verdi.'
 
   return (
-    <main className={'network-intermission ' + mode}>
-      <section className="network-intermission-card">
-        <small>{mode === 'dawn' ? '☀ ŞAFAK' : '🗳 OYLAMA SONUCU'} · {snapshot.round}. TUR</small>
+    <main className={'network-intermission network-flow-screen ' + mode}>
+      <section className={'network-intermission-card network-flow-card ' + (eliminated !== null ? 'has-player' : 'quiet')}>
+        <div className="network-flow-kicker">
+          <span>{mode === 'dawn' ? '🌅' : '🗳'}</span>
+          <b>{snapshot.round}. TUR</b>
+          <em>{mode === 'dawn' ? 'Şafak' : 'Oylama Sonucu'}</em>
+        </div>
         <div className="network-intermission-icon">{mode === 'dawn' ? '🌅' : '⚖'}</div>
         <h1>{title}</h1>
         {eliminated !== null && (
@@ -1143,13 +1151,13 @@ function NetworkEnd({
   onExit: () => void
 }) {
   return (
-    <main className="network-end">
-      <section className={'network-end-card winner-' + snapshot.winner}>
+    <main className="network-end network-flow-screen">
+      <section className={'network-end-card network-flow-card winner-' + snapshot.winner}>
         <div className="network-end-kicker"><span>✦</span><b>OYUN TAMAMLANDI</b><span>✦</span></div>
         <small>KAZANAN TARAF</small>
         <div className="network-end-icon">{snapshot.winner === 'vampire' ? '🦇' : '☀'}</div>
-        <h1>{snapshot.winner === 'vampire' ? 'Vampirler Kazandı' : 'Köy Kazandı'}</h1>
-        <p>{snapshot.round} tur süren oyun tamamlandı. Gizli roller artık açık.</p>
+        <h1>{snapshot.winner === 'vampire' ? 'VAMPİRLER' : 'KÖYLÜLER'}</h1>
+        <p><b>{snapshot.winner === 'vampire' ? 'Vampirler kazandı.' : 'Köylüler kazandı.'}</b> {snapshot.round} tur sonunda perde kalktı. Tüm gerçek roller artık açık.</p>
         <div className="network-end-role-head">
           <b>Gerçek Roller</b>
           <small>Oyun boyunca gizli tutulan roller</small>
@@ -1172,7 +1180,10 @@ function NetworkEnd({
                   <b>{playerName(snapshot, entry.playerId)}</b>
                   <span>{roleVisuals[entry.role].icon} {roleVisuals[entry.role].title}</span>
                 </div>
-                <small>{publicPlayer?.alive ? 'HAYATTA' : 'ELENDİ'}</small>
+                <small>
+                  {publicPlayer?.alive ? 'HAYATTA' : 'ELENDİ'}
+                  {entry.playerId === snapshot.self.id ? ' · SEN' : ''}
+                </small>
               </div>
             )
           })}
