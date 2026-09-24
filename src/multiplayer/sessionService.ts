@@ -172,17 +172,22 @@ export class RoomSessionService {
     }
 
     const result = room.runtime.dispatch(session.playerId, command)
-    const accepted = result.response.type === 'command.accepted'
 
-    if (accepted) {
+    if (result.response.type === 'command.accepted') {
       session.acceptedRequests.set(command.requestId, result.response)
+      return {
+        response: result.response,
+        snapshot: result.snapshot,
+        mutated: true,
+        broadcasts: this.broadcastsForRoom(room),
+      }
     }
 
     return {
       response: result.response,
       snapshot: result.snapshot,
-      mutated: accepted,
-      broadcasts: accepted ? this.broadcastsForRoom(room) : [],
+      mutated: false,
+      broadcasts: [],
     }
   }
 
