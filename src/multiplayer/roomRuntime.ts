@@ -99,6 +99,10 @@ export class AuthoritativeRoom {
     return this.revision
   }
 
+  getPhase(): GamePhase {
+    return this.state.phase
+  }
+
   getPhaseDeadlineAt(): number | null {
     return this.phaseDeadlineAt
   }

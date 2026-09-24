@@ -39,6 +39,9 @@ export interface PersistedSession {
 
 export interface PersistedRoom {
   roomId: string
+  createdAt?: number
+  lastActivityAt?: number
+  endedAt?: number | null
   runtime: PersistedAuthoritativeRoom | null
   lobby: PersistedLobby | null
   playerIds: number[]

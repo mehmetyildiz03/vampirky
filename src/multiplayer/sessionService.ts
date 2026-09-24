@@ -39,11 +39,27 @@ const MIN_PLAYERS = 6
 const MAX_PLAYERS = 12
 const MAX_NAME_LENGTH = 20
 
+export interface RoomLifecycleConfig {
+  reconnectGraceMs: number
+  emptyLobbyTtlMs: number
+  abandonedGameTtlMs: number
+  finishedGameTtlMs: number
+}
+
+export const DEFAULT_ROOM_LIFECYCLE: RoomLifecycleConfig = {
+  reconnectGraceMs: 2 * 60 * 1000,
+  emptyLobbyTtlMs: 15 * 60 * 1000,
+  abandonedGameTtlMs: 60 * 60 * 1000,
+  finishedGameTtlMs: 30 * 60 * 1000,
+}
+
 interface SessionRecord {
   token: string
   playerId: number
   acceptedRequests: Map<string, CommandAcceptedMessage>
   privateDeduction: PrivateDeductionState | null
+  connected: boolean
+  disconnectedAt: number | null
 }
 
 interface LobbyPlayerRecord {
@@ -69,6 +85,10 @@ interface RoomRecord {
   playerIds: Set<number>
   sessionsByToken: Map<string, SessionRecord>
   tokenByPlayerId: Map<number, string>
+  createdAt: number
+  lastActivityAt: number
+  allDisconnectedSince: number | null
+  endedAt: number | null
 }
 
 export interface ClaimedSession {
@@ -109,6 +129,11 @@ export interface SessionDispatchResult {
   broadcasts: SessionBroadcast[]
 }
 
+export interface SessionTickResult {
+  broadcasts: SessionBroadcast[]
+  expiredSessionTokens: string[]
+}
+
 function secureToken(): string {
   return `${crypto.randomUUID().replaceAll('-', '')}${crypto.randomUUID().replaceAll('-', '')}`
 }
@@ -139,9 +164,17 @@ function currentRevision(room: RoomRecord): number {
 export class RoomSessionService {
   private rooms = new Map<string, RoomRecord>()
   private roomIdBySessionToken = new Map<string, string>()
+  private readonly lifecycle: RoomLifecycleConfig
   private persistenceListener:
     | ((state: PersistedRoomSessionService) => void)
     | null = null
+
+  constructor(lifecycle: Partial<RoomLifecycleConfig> = {}) {
+    this.lifecycle = {
+      ...DEFAULT_ROOM_LIFECYCLE,
+      ...lifecycle,
+    }
+  }
 
   setPersistenceListener(
     listener: ((state: PersistedRoomSessionService) => void) | null,
@@ -155,6 +188,9 @@ export class RoomSessionService {
       savedAt: new Date().toISOString(),
       rooms: [...this.rooms.values()].map((room) => ({
         roomId: room.roomId,
+        createdAt: room.createdAt,
+        lastActivityAt: room.lastActivityAt,
+        endedAt: room.endedAt,
         runtime: room.runtime?.exportPersistedState() ?? null,
         lobby: room.lobby
           ? {
@@ -234,6 +270,8 @@ export class RoomSessionService {
           privateDeduction: persistedSession.privateDeduction
             ? structuredClone(persistedSession.privateDeduction)
             : null,
+          connected: false,
+          disconnectedAt: Date.now(),
         }
         sessionsByToken.set(session.token, session)
         tokenByPlayerId.set(session.playerId, session.token)
@@ -263,6 +301,10 @@ export class RoomSessionService {
         )
       }
 
+      const restoredAt = Date.now()
+      const savedAt = Number.isFinite(Date.parse(state.savedAt))
+        ? Date.parse(state.savedAt)
+        : restoredAt
       rooms.set(roomId, {
         roomId,
         runtime,
@@ -270,6 +312,12 @@ export class RoomSessionService {
         playerIds,
         sessionsByToken,
         tokenByPlayerId,
+        createdAt: persistedRoom.createdAt ?? savedAt,
+        lastActivityAt: persistedRoom.lastActivityAt ?? savedAt,
+        allDisconnectedSince: restoredAt,
+        endedAt:
+          persistedRoom.endedAt ??
+          (runtime?.getPhase() === 'ended' ? savedAt : null),
       })
     }
 
@@ -291,6 +339,7 @@ export class RoomSessionService {
     }
 
     const roomId = this.reserveRoomId(requestedRoomId)
+    const createdAt = Date.now()
     const room: RoomRecord = {
       roomId,
       runtime: new AuthoritativeRoom(structuredClone(initialState), 0, hostPlayerId),
@@ -298,6 +347,10 @@ export class RoomSessionService {
       playerIds: new Set(initialState.players.map((player) => player.id)),
       sessionsByToken: new Map(),
       tokenByPlayerId: new Map(),
+      createdAt,
+      lastActivityAt: createdAt,
+      allDisconnectedSince: createdAt,
+      endedAt: initialState.phase === 'ended' ? createdAt : null,
     }
     this.rooms.set(roomId, room)
 
@@ -309,6 +362,7 @@ export class RoomSessionService {
     requestedRoomId?: string,
   ): LobbySessionBootstrap {
     const roomId = this.reserveRoomId(requestedRoomId)
+    const createdAt = Date.now()
     const hostName = normalizeName(hostNameInput)
     const hostPlayerId = 1
     const lobby: LobbyRecord = {
@@ -331,6 +385,10 @@ export class RoomSessionService {
       playerIds: new Set([hostPlayerId]),
       sessionsByToken: new Map(),
       tokenByPlayerId: new Map(),
+      createdAt,
+      lastActivityAt: createdAt,
+      allDisconnectedSince: createdAt,
+      endedAt: null,
     }
     this.rooms.set(roomId, room)
     const session = this.createSession(room, hostPlayerId)
@@ -371,6 +429,7 @@ export class RoomSessionService {
     lobby.revision += 1
     room.playerIds.add(playerId)
     const session = this.createSession(room, playerId)
+    this.markRoomActivity(room)
     this.notifyPersistentChange()
 
     return {
@@ -393,6 +452,7 @@ export class RoomSessionService {
     }
 
     const session = this.createSession(room, playerId)
+    this.markRoomActivity(room)
     this.notifyPersistentChange()
     return {
       roomId: room.roomId,
@@ -476,6 +536,8 @@ export class RoomSessionService {
     const result = room.runtime.dispatch(session.playerId, command)
     if (result.response.type === 'command.accepted') {
       session.acceptedRequests.set(command.requestId, result.response)
+      this.markRoomActivity(room)
+      this.captureEndedAt(room)
       this.notifyPersistentChange()
       return {
         response: result.response,
@@ -544,6 +606,7 @@ export class RoomSessionService {
       lobby.revision += 1
       const accepted = this.accept(command.requestId, lobby.revision)
       session.acceptedRequests.set(command.requestId, accepted)
+      this.markRoomActivity(room)
       this.notifyPersistentChange()
       return {
         response: accepted,
@@ -585,6 +648,7 @@ export class RoomSessionService {
       lobby.settingsRevision = lobby.revision
       const accepted = this.accept(command.requestId, lobby.revision)
       session.acceptedRequests.set(command.requestId, accepted)
+      this.markRoomActivity(room)
       this.notifyPersistentChange()
       return {
         response: accepted,
@@ -638,8 +702,11 @@ export class RoomSessionService {
       )
     }
     room.lobby = null
+    room.endedAt = null
     const accepted = this.accept(command.requestId, startRevision)
     session.acceptedRequests.set(command.requestId, accepted)
+    this.markRoomActivity(room)
+    this.captureEndedAt(room)
     this.notifyPersistentChange()
 
     return {
@@ -769,16 +836,30 @@ export class RoomSessionService {
   setSessionConnected(
     sessionToken: string,
     connected: boolean,
+    now = Date.now(),
   ): SessionBroadcast[] {
     const { room, session } = this.requireSession(sessionToken)
-    if (!room.lobby) return []
+    if (session.connected === connected) return []
 
-    const player = room.lobby.players.find(
-      (candidate) => candidate.id === session.playerId,
-    )
-    if (!player || player.connected === connected) return []
-    player.connected = connected
-    return this.broadcastsForRoom(room)
+    session.connected = connected
+    session.disconnectedAt = connected ? null : now
+    room.lastActivityAt = now
+
+    if (room.lobby) {
+      const player = room.lobby.players.find(
+        (candidate) => candidate.id === session.playerId,
+      )
+      if (player) player.connected = connected
+    }
+
+    if (this.hasConnectedSessions(room)) {
+      room.allDisconnectedSince = null
+    } else {
+      room.allDisconnectedSince ??= now
+    }
+
+    this.notifyPersistentChange()
+    return room.lobby ? this.broadcastsForRoom(room) : []
   }
 
   snapshotForSession(sessionToken: string): ViewerGameSnapshot {
@@ -799,17 +880,32 @@ export class RoomSessionService {
     return this.broadcastsForRoom(this.requireRoom(roomIdInput))
   }
 
-  tick(now = Date.now()): SessionBroadcast[] {
+  tick(now = Date.now()): SessionTickResult {
     const broadcasts: SessionBroadcast[] = []
+    const expiredSessionTokens: string[] = []
     let changed = false
-    for (const room of this.rooms.values()) {
+
+    for (const room of [...this.rooms.values()]) {
       if (room.runtime?.advanceExpired(now)) {
+        changed = true
+        this.markRoomActivity(room, now)
+        this.captureEndedAt(room, now)
+        broadcasts.push(...this.broadcastsForRoom(room))
+      }
+
+      if (room.lobby && this.evictExpiredLobbyGuests(room, now)) {
         changed = true
         broadcasts.push(...this.broadcastsForRoom(room))
       }
+
+      if (this.shouldExpireRoom(room, now)) {
+        changed = true
+        expiredSessionTokens.push(...this.deleteRoom(room))
+      }
     }
+
     if (changed) this.notifyPersistentChange()
-    return broadcasts
+    return { broadcasts, expiredSessionTokens }
   }
 
   roomIdForSession(sessionToken: string): string | null {
@@ -921,6 +1017,8 @@ export class RoomSessionService {
       privateDeduction: room.runtime
         ? createPrivateDeductionState(playerId, [...room.playerIds])
         : null,
+      connected: false,
+      disconnectedAt: Date.now(),
     }
     room.sessionsByToken.set(token, session)
     room.tokenByPlayerId.set(playerId, token)
@@ -949,6 +1047,76 @@ export class RoomSessionService {
       ...snapshot,
       privateDeduction,
     }
+  }
+
+  private markRoomActivity(room: RoomRecord, now = Date.now()): void {
+    room.lastActivityAt = now
+    if (!this.hasConnectedSessions(room)) {
+      room.allDisconnectedSince = now
+    }
+  }
+
+  private captureEndedAt(room: RoomRecord, now = Date.now()): void {
+    if (room.runtime?.getPhase() === 'ended') {
+      room.endedAt ??= now
+    }
+  }
+
+  private hasConnectedSessions(room: RoomRecord): boolean {
+    return [...room.sessionsByToken.values()].some((session) => session.connected)
+  }
+
+  private evictExpiredLobbyGuests(room: RoomRecord, now: number): boolean {
+    const lobby = room.lobby
+    if (!lobby) return false
+
+    const expired = [...room.sessionsByToken.values()].filter(
+      (session) =>
+        session.playerId !== lobby.hostPlayerId &&
+        !session.connected &&
+        session.disconnectedAt !== null &&
+        now - session.disconnectedAt >= this.lifecycle.reconnectGraceMs,
+    )
+    if (expired.length === 0) return false
+
+    const expiredIds = new Set(expired.map((session) => session.playerId))
+    for (const session of expired) {
+      room.sessionsByToken.delete(session.token)
+      room.tokenByPlayerId.delete(session.playerId)
+      room.playerIds.delete(session.playerId)
+      this.roomIdBySessionToken.delete(session.token)
+    }
+    lobby.players = lobby.players.filter((player) => !expiredIds.has(player.id))
+    lobby.revision += 1
+    room.lastActivityAt = now
+    return true
+  }
+
+  private shouldExpireRoom(room: RoomRecord, now: number): boolean {
+    if (room.lobby) {
+      return (
+        room.allDisconnectedSince !== null &&
+        now - room.allDisconnectedSince >= this.lifecycle.emptyLobbyTtlMs
+      )
+    }
+
+    if (!room.runtime) return true
+    if (room.runtime.getPhase() === 'ended') {
+      const endedAt = room.endedAt ?? room.lastActivityAt
+      return now - endedAt >= this.lifecycle.finishedGameTtlMs
+    }
+
+    return (
+      room.allDisconnectedSince !== null &&
+      now - room.allDisconnectedSince >= this.lifecycle.abandonedGameTtlMs
+    )
+  }
+
+  private deleteRoom(room: RoomRecord): string[] {
+    const tokens = [...room.sessionsByToken.keys()]
+    for (const token of tokens) this.roomIdBySessionToken.delete(token)
+    this.rooms.delete(room.roomId)
+    return tokens
   }
 
   private notifyPersistentChange(): void {

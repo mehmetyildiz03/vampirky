@@ -57,7 +57,22 @@ export class RoomGateway {
   }
 
   tick(now = Date.now()): void {
-    this.sendBroadcasts(this.sessions.tick(now))
+    const result = this.sessions.tick(now)
+    this.sendBroadcasts(result.broadcasts)
+
+    for (const sessionToken of result.expiredSessionTokens) {
+      const peer = this.peerBySessionToken.get(sessionToken)
+      if (!peer) continue
+
+      peer.send({
+        type: 'session.rejected',
+        code: 'room_not_found',
+        message: 'Room expired due to inactivity.',
+      })
+      this.peerBySessionToken.delete(sessionToken)
+      this.sessionByPeerId.delete(peer.id)
+      peer.close?.('Room expired due to inactivity.')
+    }
   }
 
   disconnect(peer: TransportPeer): void {
