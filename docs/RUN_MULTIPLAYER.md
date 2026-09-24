@@ -33,4 +33,19 @@ With the variable configured, **Oda Kur** and **Odaya Katıl** use the real serv
 
 Without the environment variable, those menu items intentionally open the existing local demo lobby.
 
-The current multiplayer handoff stops after the secure role-reveal snapshot. Day/night/vote UI still uses the local demo `GameState`; migrating those screens to `ViewerGameSnapshot` is the next boundary.
+The real multiplayer path now continues through the full server-authoritative phase loop:
+
+- role reveal readiness
+- night actions and private Vampire chat
+- server-timed night resolution
+- dawn
+- village discussion and public claims
+- host early-vote control
+- voting
+- day resolution
+- subsequent nights
+- end-of-game role reveal
+
+The browser multiplayer UI reads only `ViewerGameSnapshot` and sends intent commands. It does not reconstruct or receive the authoritative `GameState`.
+
+The local Quick Game demo remains intentionally separate and still uses the in-browser engine for fast single-device testing.

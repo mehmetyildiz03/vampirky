@@ -231,6 +231,89 @@ describe('real websocket multiplayer adapter', () => {
     hostSocket.close()
   })
 
+  it('advances a real websocket room from role reveal into a server-timed day cycle', async () => {
+    const sessionsService = new RoomSessionService()
+    const game = createGame(seeds(6))
+    const host = sessionsService.createRoom(game, game.players[0].id, 'CYCLE1')
+    const guests = game.players.slice(1).map((player) =>
+      sessionsService.claimSeat('CYCLE1', player.id),
+    )
+
+    running = await createMultiplayerServer({
+      port: 0,
+      allowedOrigins: ['*'],
+      sessions: sessionsService,
+    }).listen()
+
+    const socket = await openSocket(running.websocketUrl)
+    const initial = nextMessages(socket, 2)
+    socket.send(JSON.stringify({
+      type: 'session.resume',
+      roomId: host.roomId,
+      sessionToken: host.sessionToken,
+      lastSeenRevision: 0,
+    }))
+    await initial
+
+    let revision = 0
+    for (const guest of guests) {
+      const result = sessionsService.dispatchGame(guest.sessionToken, {
+        type: 'phase.ready',
+        requestId: 'guest-ready-' + guest.playerId,
+        baseRevision: revision,
+      })
+      expect(result.response.type).toBe('command.accepted')
+      revision = result.response.revision
+    }
+
+    const beforeHostReady = nextMessages(socket, 1)
+    running.gateway.broadcastRoom('CYCLE1')
+    const [readySnapshot] = await beforeHostReady
+    expect(readySnapshot).toMatchObject({
+      type: 'game.snapshot',
+      revision,
+      snapshot: { phase: 'role_reveal', phaseReadyCount: 5 },
+    })
+
+    const hostReadyFrames = nextMessages(socket, 2)
+    socket.send(JSON.stringify({
+      type: 'game.command',
+      command: {
+        type: 'phase.ready',
+        requestId: 'host-ready',
+        baseRevision: revision,
+      },
+    }))
+    const [accepted, nightSnapshot] = await hostReadyFrames
+    expect(accepted).toMatchObject({ type: 'command.accepted' })
+    expect(nightSnapshot).toMatchObject({
+      type: 'game.snapshot',
+      snapshot: { phase: 'night' },
+    })
+
+    if (nightSnapshot.type !== 'game.snapshot') throw new Error('night snapshot expected')
+    const nightDeadline = nightSnapshot.snapshot.phaseDeadlineAt!
+    const dawnFrame = nextMessages(socket, 1)
+    running.gateway.tick(nightDeadline)
+    const [dawnSnapshot] = await dawnFrame
+    expect(dawnSnapshot).toMatchObject({
+      type: 'game.snapshot',
+      snapshot: { phase: 'dawn' },
+    })
+
+    if (dawnSnapshot.type !== 'game.snapshot') throw new Error('dawn snapshot expected')
+    const dawnDeadline = dawnSnapshot.snapshot.phaseDeadlineAt!
+    const discussionFrame = nextMessages(socket, 1)
+    running.gateway.tick(dawnDeadline)
+    const [discussionSnapshot] = await discussionFrame
+    expect(discussionSnapshot).toMatchObject({
+      type: 'game.snapshot',
+      snapshot: { phase: 'discussion' },
+    })
+
+    socket.close()
+  })
+
   it('keeps legacy active-game bootstrap endpoints for integration tooling', async () => {
     running = await createMultiplayerServer({
       port: 0,

@@ -50,6 +50,7 @@ export function NetworkGame({
 }) {
   const [selectedTarget, setSelectedTarget] = useState<number | null>(null)
   const [sideTab, setSideTab] = useState<'chat' | 'claims'>('chat')
+  const [claimSource, setClaimSource] = useState<{ id: number; text: string } | null>(null)
 
   useEffect(() => {
     setSelectedTarget(null)
@@ -202,13 +203,32 @@ export function NetworkGame({
                 </button>
               </div>
               {sideTab === 'chat' ? (
-                <NetworkChat snapshot={snapshot} send={send} />
+                <NetworkChat
+                  snapshot={snapshot}
+                  send={send}
+                  onClaimFromMessage={(id, text) => {
+                    setClaimSource({ id, text })
+                    setSideTab('claims')
+                  }}
+                />
               ) : (
-                <NetworkClaims snapshot={snapshot} send={send} />
+                <NetworkClaims
+                  snapshot={snapshot}
+                  send={send}
+                  source={claimSource}
+                  onClearSource={() => setClaimSource(null)}
+                />
               )}
             </>
           ) : (
-            <NetworkChat snapshot={snapshot} send={send} />
+            <NetworkChat
+              snapshot={snapshot}
+              send={send}
+              onClaimFromMessage={(id, text) => {
+                setClaimSource({ id, text })
+                setSideTab('claims')
+              }}
+            />
           )}
         </aside>
       </section>
@@ -473,9 +493,11 @@ function VoteActionBar({
 function NetworkChat({
   snapshot,
   send,
+  onClaimFromMessage,
 }: {
   snapshot: ViewerGameSnapshot
   send: (command: GameCommandInput) => void
+  onClaimFromMessage: (messageId: number, text: string) => void
 }) {
   const channels = snapshot.capabilities.readableChatChannels
   const [channel, setChannel] = useState<ChatChannel>(
@@ -522,6 +544,16 @@ function NetworkChat({
               <small>{message.round}. tur · {message.phase}</small>
             </header>
             <p>{message.text}</p>
+            {message.channel === 'village' &&
+              message.authorId === snapshot.self.id &&
+              snapshot.capabilities.canRecordPublicClaim && (
+                <button
+                  className="network-chat-claim"
+                  onClick={() => onClaimFromMessage(message.id, message.text)}
+                >
+                  ◇ İddia olarak kaydet
+                </button>
+              )}
           </article>
         ))}
       </div>
@@ -551,9 +583,13 @@ function NetworkChat({
 function NetworkClaims({
   snapshot,
   send,
+  source,
+  onClearSource,
 }: {
   snapshot: ViewerGameSnapshot
   send: (command: GameCommandInput) => void
+  source: { id: number; text: string } | null
+  onClearSource: () => void
 }) {
   const [kind, setKind] = useState<ClaimCommandPayload['kind']>('role')
   const [targetId, setTargetId] = useState<number>(
@@ -563,6 +599,12 @@ function NetworkClaims({
   const [statement, setStatement] = useState('')
   const [action, setAction] = useState<'protected' | 'investigated' | 'visited'>('investigated')
   const [quote, setQuote] = useState('')
+
+  useEffect(() => {
+    if (!source) return
+    setQuote(source.text)
+    setStatement(source.text)
+  }, [source])
 
   const submit = () => {
     let payload: ClaimCommandPayload
@@ -579,9 +621,13 @@ function NetworkClaims({
       payload = { kind, targetId, quote: quote.trim() || undefined }
     }
 
+    if (source) {
+      payload = { ...payload, sourceMessageId: source.id } as ClaimCommandPayload
+    }
     send({ type: 'claim.record', payload })
     setStatement('')
     setQuote('')
+    onClearSource()
   }
 
   return (
@@ -604,7 +650,15 @@ function NetworkClaims({
       </div>
 
       {snapshot.capabilities.canRecordPublicClaim && (
-        <div className="network-claim-form">
+        <>
+          {source && (
+            <div className="network-claim-source">
+              <span>⌁ KÖY SOHBETİNDEN</span>
+              <p>“{source.text}”</p>
+              <button onClick={onClearSource}>Kaynağı kaldır</button>
+            </div>
+          )}
+          <div className="network-claim-form">
           <select value={kind} onChange={(event) => setKind(event.target.value as ClaimCommandPayload['kind'])}>
             <option value="role">Rol iddiası</option>
             <option value="information">Bilgi</option>
@@ -636,7 +690,8 @@ function NetworkClaims({
           {kind === 'accusation' && <RoleSelect value={role} onChange={setRole} />}
           <input value={quote} onChange={(event) => setQuote(event.target.value)} placeholder="İsteğe bağlı doğrudan alıntı" />
           <button onClick={submit}>◇ İddiayı Kaydet</button>
-        </div>
+          </div>
+        </>
       )}
     </div>
   )
@@ -760,7 +815,7 @@ function playerName(snapshot: ViewerGameSnapshot, id: number): string {
 }
 
 function claimText(snapshot: ViewerGameSnapshot, claim: ViewerGameSnapshot['claims'][number]): string {
-  if (claim.kind === 'role') return `“Ben ${roleVisuals[claim.role].title}im.”`
+  if (claim.kind === 'role') return `${roleVisuals[claim.role].title} rolünü iddia ediyor.`
   if (claim.kind === 'information') return `${playerName(snapshot, claim.targetId)} hakkında: ${claim.statement}`
   if (claim.kind === 'action') return `${playerName(snapshot, claim.targetId)} · ${claim.action}`
   if (claim.kind === 'accusation') {
