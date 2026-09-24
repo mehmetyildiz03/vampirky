@@ -111,8 +111,11 @@ export class RoomGateway {
         revision: session.revision,
         caughtUp: session.caughtUp,
       })
-      peer.send(this.sessions.messageForSession(sessionToken))
-      this.sendBroadcasts(presenceBroadcasts)
+      if (presenceBroadcasts.length > 0) {
+        this.sendBroadcasts(presenceBroadcasts)
+      } else {
+        peer.send(this.sessions.messageForSession(sessionToken))
+      }
     } catch (error) {
       peer.send(sessionError(error))
     }

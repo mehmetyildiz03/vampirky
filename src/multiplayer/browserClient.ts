@@ -1,6 +1,8 @@
 import type {
   ClientGameCommand,
+  ClientLobbyCommand,
   ClientTransportMessage,
+  LobbySnapshot,
   ServerTransportMessage,
 } from './protocol'
 import { decodeServerTransportMessage } from './wireCodec'
@@ -16,6 +18,10 @@ export interface SessionIdentity {
 
 export interface SessionBootstrapResponse extends SessionIdentity {
   snapshot: ViewerGameSnapshot
+}
+
+export interface LobbySessionBootstrapResponse extends SessionIdentity {
+  snapshot: LobbySnapshot
 }
 
 export type ClientConnectionState =
@@ -37,6 +43,7 @@ export type BrowserClientEvent =
   | { type: 'state'; state: ClientConnectionState }
   | { type: 'message'; message: ServerTransportMessage }
   | { type: 'snapshot'; snapshot: ViewerGameSnapshot }
+  | { type: 'lobbySnapshot'; snapshot: LobbySnapshot }
   | { type: 'error'; message: string }
 
 type Listener = (event: BrowserClientEvent) => void
@@ -83,6 +90,37 @@ export class BrowserMultiplayerClient {
     return this.identity ? { ...this.identity, revision: this.revision } : null
   }
 
+  async createLobby(
+    hostName: string,
+    roomId?: string,
+  ): Promise<LobbySessionBootstrapResponse> {
+    const response = await fetch(this.httpBaseUrl + '/api/lobbies', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hostName, roomId }),
+    })
+    return this.readBootstrapResponse<LobbySessionBootstrapResponse>(response)
+  }
+
+  async joinLobby(
+    roomId: string,
+    name: string,
+  ): Promise<LobbySessionBootstrapResponse> {
+    const response = await fetch(
+      this.httpBaseUrl +
+        '/api/lobbies/' +
+        encodeURIComponent(roomId) +
+        '/join',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name }),
+      },
+    )
+    return this.readBootstrapResponse<LobbySessionBootstrapResponse>(response)
+  }
+
+  // Legacy active-game bootstrap retained for integration tooling.
   async createRoom(
     players: PlayerSeed[],
     hostPlayerId: number,
@@ -93,7 +131,7 @@ export class BrowserMultiplayerClient {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ players, hostPlayerId, roomId }),
     })
-    return this.readBootstrapResponse(response)
+    return this.readBootstrapResponse<SessionBootstrapResponse>(response)
   }
 
   async claimSeat(
@@ -108,7 +146,7 @@ export class BrowserMultiplayerClient {
         encodeURIComponent(String(playerId)),
       { method: 'POST' },
     )
-    return this.readBootstrapResponse(response)
+    return this.readBootstrapResponse<SessionBootstrapResponse>(response)
   }
 
   connect(identity: SessionIdentity): void {
@@ -127,7 +165,7 @@ export class BrowserMultiplayerClient {
     try {
       const identity = JSON.parse(stored) as SessionIdentity
       if (
-        identity.roomId !== roomId ||
+        identity.roomId !== roomId.toUpperCase() ||
         typeof identity.sessionToken !== 'string' ||
         typeof identity.playerId !== 'number' ||
         typeof identity.revision !== 'number'
@@ -149,26 +187,52 @@ export class BrowserMultiplayerClient {
     this.setState('closed')
   }
 
+  setReady(ready: boolean): string {
+    return this.sendLobbyCommand({ type: 'lobby.ready', ready })
+  }
+
+  startGame(): string {
+    return this.sendLobbyCommand({ type: 'lobby.start' })
+  }
+
   sendCommand(
     command: Omit<ClientGameCommand, 'requestId' | 'baseRevision'>,
   ): string {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      throw new Error('WebSocket is not connected.')
-    }
-    if (this.state !== 'ready') throw new Error('Session is not ready.')
-
     const requestId = crypto.randomUUID()
     const wireCommand = {
       ...command,
       requestId,
       baseRevision: this.revision,
     } as ClientGameCommand
-
-    this.send({
+    this.sendReadyMessage({
       type: 'game.command',
       command: wireCommand,
     })
     return requestId
+  }
+
+  private sendLobbyCommand(
+    command: Omit<ClientLobbyCommand, 'requestId' | 'baseRevision'>,
+  ): string {
+    const requestId = crypto.randomUUID()
+    const wireCommand = {
+      ...command,
+      requestId,
+      baseRevision: this.revision,
+    } as ClientLobbyCommand
+    this.sendReadyMessage({
+      type: 'lobby.command',
+      command: wireCommand,
+    })
+    return requestId
+  }
+
+  private sendReadyMessage(message: ClientTransportMessage): void {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      throw new Error('WebSocket is not connected.')
+    }
+    if (this.state !== 'ready') throw new Error('Session is not ready.')
+    this.send(message)
   }
 
   private openSocket(reconnecting: boolean): void {
@@ -176,7 +240,6 @@ export class BrowserMultiplayerClient {
 
     this.socket?.close()
     this.setState(reconnecting ? 'reconnecting' : 'connecting')
-
     const socket = new WebSocket(this.websocketUrl)
     this.socket = socket
 
@@ -230,10 +293,17 @@ export class BrowserMultiplayerClient {
     } else if (message.type === 'game.snapshot') {
       this.revision = message.snapshot.revision
       this.emit({ type: 'snapshot', snapshot: message.snapshot })
+    } else if (message.type === 'lobby.snapshot') {
+      this.revision = message.snapshot.revision
+      this.emit({ type: 'lobbySnapshot', snapshot: message.snapshot })
     } else if (message.type === 'session.rejected') {
       this.emit({ type: 'error', message: message.message })
     }
 
+    if (this.identity) {
+      this.identity = { ...this.identity, revision: this.revision }
+      this.persistIdentity()
+    }
     this.emit({ type: 'message', message })
   }
 
@@ -261,10 +331,10 @@ export class BrowserMultiplayerClient {
     this.socket.send(JSON.stringify(message))
   }
 
-  private async readBootstrapResponse(
+  private async readBootstrapResponse<T extends SessionIdentity>(
     response: Response,
-  ): Promise<SessionBootstrapResponse> {
-    const body = await response.json() as SessionBootstrapResponse | { error: string }
+  ): Promise<T> {
+    const body = await response.json() as T | { error: string }
     if (!response.ok || 'error' in body) {
       throw new Error('error' in body ? body.error : 'Bootstrap request failed.')
     }

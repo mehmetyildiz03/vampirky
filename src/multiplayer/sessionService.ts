@@ -341,16 +341,6 @@ export class RoomSessionService {
       )
     }
 
-    if (command.baseRevision !== lobby.revision) {
-      return this.rejectRoomCommand(
-        room,
-        session,
-        command.requestId,
-        'stale_revision',
-        'Client revision is stale. Refresh the lobby snapshot before retrying.',
-      )
-    }
-
     const duplicate = session.acceptedRequests.get(command.requestId)
     if (duplicate) {
       return {
@@ -359,6 +349,16 @@ export class RoomSessionService {
         mutated: false,
         broadcasts: [],
       }
+    }
+
+    if (command.baseRevision !== lobby.revision) {
+      return this.rejectRoomCommand(
+        room,
+        session,
+        command.requestId,
+        'stale_revision',
+        'Client revision is stale. Refresh the lobby snapshot before retrying.',
+      )
     }
 
     if (command.type === 'lobby.ready') {

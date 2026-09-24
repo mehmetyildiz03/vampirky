@@ -1,5 +1,6 @@
 import type {
   ClientGameCommand,
+  ClientLobbyCommand,
   ClientTransportMessage,
   ServerTransportMessage,
 } from './protocol'
@@ -43,29 +44,33 @@ function isClientGameCommand(value: unknown): value is ClientGameCommand {
   }
 
   if (value.type !== 'claim.record' || !isRecord(value.payload)) return false
-
   const payload = value.payload
   if (!isString(payload.kind)) return false
 
   if (payload.kind === 'role') {
     return ['vampire', 'villager', 'seer', 'protector'].includes(String(payload.role))
   }
-
   if (payload.kind === 'information') {
     return isNonNegativeInteger(payload.targetId) && isString(payload.statement)
   }
-
   if (payload.kind === 'action') {
     return (
       isNonNegativeInteger(payload.targetId) &&
       ['protected', 'investigated', 'visited'].includes(String(payload.action))
     )
   }
-
   if (payload.kind === 'accusation' || payload.kind === 'defense') {
     return isNonNegativeInteger(payload.targetId)
   }
+  return false
+}
 
+function isClientLobbyCommand(value: unknown): value is ClientLobbyCommand {
+  if (!isRecord(value) || !isString(value.type) || !hasCommandMeta(value)) {
+    return false
+  }
+  if (value.type === 'lobby.start') return true
+  if (value.type === 'lobby.ready') return typeof value.ready === 'boolean'
   return false
 }
 
@@ -95,6 +100,12 @@ export function decodeClientTransportMessage(
       : null
   }
 
+  if (value.type === 'lobby.command') {
+    return isClientLobbyCommand(value.command)
+      ? (value as unknown as ClientTransportMessage)
+      : null
+  }
+
   return null
 }
 
@@ -112,6 +123,7 @@ export function decodeServerTransportMessage(
   if (
     ![
       'game.snapshot',
+      'lobby.snapshot',
       'command.accepted',
       'command.rejected',
       'session.ready',
