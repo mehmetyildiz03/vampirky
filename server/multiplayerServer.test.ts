@@ -19,11 +19,18 @@ function discussionGame() {
   return beginDiscussion(game)
 }
 
-function nextMessage(socket: WebSocket): Promise<ServerTransportMessage> {
+function nextMessages(
+  socket: WebSocket,
+  count: number,
+): Promise<ServerTransportMessage[]> {
   return new Promise((resolve, reject) => {
+    const messages: ServerTransportMessage[] = []
     const onMessage = (data: WebSocket.RawData) => {
-      cleanup()
-      resolve(JSON.parse(data.toString()) as ServerTransportMessage)
+      messages.push(JSON.parse(data.toString()) as ServerTransportMessage)
+      if (messages.length === count) {
+        cleanup()
+        resolve(messages)
+      }
     }
     const onError = (error: Error) => {
       cleanup()
@@ -68,8 +75,7 @@ describe('real websocket multiplayer adapter', () => {
     const socketA = await openSocket(running.websocketUrl)
     const socketB = await openSocket(running.websocketUrl)
 
-    const readyA = nextMessage(socketA)
-    const snapshotA = nextMessage(socketA)
+    const initialA = nextMessages(socketA, 2)
     socketA.send(JSON.stringify({
       type: 'session.resume',
       roomId: a.roomId,
@@ -77,17 +83,17 @@ describe('real websocket multiplayer adapter', () => {
       lastSeenRevision: 0,
     }))
 
-    expect(await readyA).toMatchObject({
+    const [readyA, snapshotA] = await initialA
+    expect(readyA).toMatchObject({
       type: 'session.ready',
       playerId: game.players[0].id,
     })
-    expect(await snapshotA).toMatchObject({
+    expect(snapshotA).toMatchObject({
       type: 'game.snapshot',
       snapshot: { self: { id: game.players[0].id } },
     })
 
-    const readyB = nextMessage(socketB)
-    const snapshotB = nextMessage(socketB)
+    const initialB = nextMessages(socketB, 2)
     socketB.send(JSON.stringify({
       type: 'session.resume',
       roomId: b.roomId,
@@ -95,18 +101,18 @@ describe('real websocket multiplayer adapter', () => {
       lastSeenRevision: 0,
     }))
 
-    expect(await readyB).toMatchObject({
+    const [readyB, snapshotB] = await initialB
+    expect(readyB).toMatchObject({
       type: 'session.ready',
       playerId: game.players[1].id,
     })
-    expect(await snapshotB).toMatchObject({
+    expect(snapshotB).toMatchObject({
       type: 'game.snapshot',
       snapshot: { self: { id: game.players[1].id } },
     })
 
-    const acceptedA = nextMessage(socketA)
-    const broadcastA = nextMessage(socketA)
-    const broadcastB = nextMessage(socketB)
+    const responseA = nextMessages(socketA, 2)
+    const responseB = nextMessages(socketB, 1)
 
     socketA.send(JSON.stringify({
       type: 'game.command',
@@ -119,16 +125,18 @@ describe('real websocket multiplayer adapter', () => {
       },
     }))
 
-    expect(await acceptedA).toMatchObject({
+    const [acceptedA, broadcastA] = await responseA
+    const [broadcastB] = await responseB
+    expect(acceptedA).toMatchObject({
       type: 'command.accepted',
       revision: 1,
     })
-    expect(await broadcastA).toMatchObject({
+    expect(broadcastA).toMatchObject({
       type: 'game.snapshot',
       revision: 1,
       snapshot: { self: { id: game.players[0].id } },
     })
-    expect(await broadcastB).toMatchObject({
+    expect(broadcastB).toMatchObject({
       type: 'game.snapshot',
       revision: 1,
       snapshot: { self: { id: game.players[1].id } },

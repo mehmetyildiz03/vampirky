@@ -239,6 +239,7 @@ export function createMultiplayerServer(
         websocketUrl: `ws://${host}:${port}/ws`,
         close: () =>
           new Promise<void>((resolve, reject) => {
+            for (const client of websocketServer.clients) client.terminate()
             websocketServer.close(() => {
               httpServer.close((error) => error ? reject(error) : resolve())
             })
