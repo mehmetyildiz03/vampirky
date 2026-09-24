@@ -99,8 +99,37 @@ export type ServerGameMessage =
 export interface ReconnectHello {
   type: 'session.resume'
   roomId: string
+  sessionToken: string
   lastSeenRevision: number
 }
+
+export interface GameCommandMessage {
+  type: 'game.command'
+  command: ClientGameCommand
+}
+
+export type ClientTransportMessage =
+  | ReconnectHello
+  | GameCommandMessage
+
+export interface SessionReadyMessage {
+  type: 'session.ready'
+  roomId: string
+  playerId: number
+  revision: number
+  caughtUp: boolean
+}
+
+export interface SessionRejectedMessage {
+  type: 'session.rejected'
+  code: 'room_not_found' | 'invalid_session' | 'session_mismatch'
+  message: string
+}
+
+export type ServerTransportMessage =
+  | ServerGameMessage
+  | SessionReadyMessage
+  | SessionRejectedMessage
 
 // Prevent protocol drift when claim kinds change.
 const _claimKinds: ClaimKind[] = [
