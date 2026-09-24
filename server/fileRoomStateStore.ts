@@ -7,6 +7,7 @@ import {
 
 export class JsonRoomStateStore {
   private pending: Promise<void> = Promise.resolve()
+  private lastError: Error | null = null
 
   constructor(readonly path: string) {}
 
@@ -42,14 +43,21 @@ export class JsonRoomStateStore {
 
   scheduleSave(state: PersistedRoomSessionService): void {
     const payload = JSON.stringify(state)
-    this.pending = this.pending.then(
-      () => this.writeAtomically(payload),
-      () => this.writeAtomically(payload),
-    )
+    this.pending = this.pending
+      .then(() => this.writeAtomically(payload))
+      .catch((error) => {
+        this.lastError =
+          error instanceof Error ? error : new Error('Unknown persistence error.')
+      })
   }
 
   async flush(): Promise<void> {
     await this.pending
+    if (this.lastError) {
+      const error = this.lastError
+      this.lastError = null
+      throw error
+    }
   }
 
   private async writeAtomically(payload: string): Promise<void> {
