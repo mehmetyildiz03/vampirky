@@ -10,7 +10,10 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws'
 import { createGame } from '../src/game/engine'
 import type { PlayerSeed } from '../src/game/types'
 import { RoomGateway, type TransportPeer } from '../src/multiplayer/roomGateway'
-import { RoomSessionService } from '../src/multiplayer/sessionService'
+import {
+  RoomSessionService,
+  type RoomLifecycleConfig,
+} from '../src/multiplayer/sessionService'
 import { decodeClientTransportMessage } from '../src/multiplayer/wireCodec'
 
 const MAX_JSON_BYTES = 64 * 1024
@@ -21,6 +24,7 @@ export interface MultiplayerServerOptions {
   allowedOrigins?: string[]
   sessions?: RoomSessionService
   persistencePath?: string | null
+  lifecycle?: Partial<RoomLifecycleConfig>
 }
 
 export interface RunningMultiplayerServer {
@@ -115,7 +119,7 @@ export function createMultiplayerServer(
     'http://127.0.0.1:5173',
     'https://mehmetyildiz03.github.io',
   ]
-  const sessions = options.sessions ?? new RoomSessionService()
+  const sessions = options.sessions ?? new RoomSessionService(options.lifecycle)
   const gateway = new RoomGateway(sessions)
   const persistence = options.persistencePath
     ? new JsonRoomStateStore(options.persistencePath)
@@ -217,6 +221,19 @@ export function createMultiplayerServer(
   const phaseTicker = setInterval(() => gateway.tick(Date.now()), 250)
   phaseTicker.unref()
 
+  const heartbeat = setInterval(() => {
+    for (const client of websocketServer.clients) {
+      const socket = client as WebSocket & { isAlive?: boolean }
+      if (socket.isAlive === false) {
+        socket.terminate()
+        continue
+      }
+      socket.isAlive = false
+      socket.ping()
+    }
+  }, 30_000)
+  heartbeat.unref()
+
   httpServer.on('upgrade', (request, socket, head) => {
     const url = new URL(request.url ?? '/', 'http://server.local')
     const allowedOrigin = originAllowed(request, allowedOrigins)
@@ -233,6 +250,12 @@ export function createMultiplayerServer(
   })
 
   websocketServer.on('connection', (websocket) => {
+    const liveSocket = websocket as WebSocket & { isAlive?: boolean }
+    liveSocket.isAlive = true
+    liveSocket.on('pong', () => {
+      liveSocket.isAlive = true
+    })
+
     const peer = websocketPeer(websocket)
 
     websocket.on('message', (raw) => {
@@ -293,6 +316,7 @@ export function createMultiplayerServer(
         websocketUrl: `ws://${host}:${port}/ws`,
         close: async () => {
           clearInterval(phaseTicker)
+          clearInterval(heartbeat)
           for (const client of websocketServer.clients) client.terminate()
           await new Promise<void>((resolve, reject) => {
             websocketServer.close(() => {

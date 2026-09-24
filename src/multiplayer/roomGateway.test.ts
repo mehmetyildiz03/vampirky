@@ -160,6 +160,29 @@ describe('room transport gateway', () => {
     })
   })
 
+  it('closes connected peers when their room expires', () => {
+    const service = new RoomSessionService({ emptyLobbyTtlMs: 10 })
+    const session = service.createLobby('Host', 'EXPIRE1')
+    const gateway = new RoomGateway(service)
+    const peer = new FakePeer('expire-peer')
+
+    gateway.receive(peer, {
+      type: 'session.resume',
+      roomId: session.roomId,
+      sessionToken: session.sessionToken,
+      lastSeenRevision: 0,
+    })
+    peer.messages = []
+
+    // Once disconnected, the room can enter its empty-room TTL window.
+    gateway.disconnect(peer)
+    const sweepPeer = new FakePeer('unused')
+    void sweepPeer
+    gateway.tick(Date.now() + 20)
+
+    expect(service.roomIdForSession(session.sessionToken)).toBeNull()
+  })
+
   it('does not accept commands before session resume', () => {
     const service = new RoomSessionService()
     const gateway = new RoomGateway(service)

@@ -174,6 +174,11 @@ export class RoomSessionService {
       ...DEFAULT_ROOM_LIFECYCLE,
       ...lifecycle,
     }
+    for (const [key, value] of Object.entries(this.lifecycle)) {
+      if (!Number.isFinite(value) || value < 0) {
+        throw new Error(`Invalid room lifecycle value for ${key}.`)
+      }
+    }
   }
 
   setPersistenceListener(
@@ -430,6 +435,7 @@ export class RoomSessionService {
     room.playerIds.add(playerId)
     const session = this.createSession(room, playerId)
     this.markRoomActivity(room)
+    if (!this.hasConnectedSessions(room)) room.allDisconnectedSince = Date.now()
     this.notifyPersistentChange()
 
     return {
@@ -453,6 +459,7 @@ export class RoomSessionService {
 
     const session = this.createSession(room, playerId)
     this.markRoomActivity(room)
+    if (!this.hasConnectedSessions(room)) room.allDisconnectedSince = Date.now()
     this.notifyPersistentChange()
     return {
       roomId: room.roomId,
@@ -1051,9 +1058,6 @@ export class RoomSessionService {
 
   private markRoomActivity(room: RoomRecord, now = Date.now()): void {
     room.lastActivityAt = now
-    if (!this.hasConnectedSessions(room)) {
-      room.allDisconnectedSince = now
-    }
   }
 
   private captureEndedAt(room: RoomRecord, now = Date.now()): void {

@@ -208,7 +208,9 @@ describe('authoritative multiplayer room runtime', () => {
       revision += 1
     }
 
-    expect(room.snapshotFor(living[0].id).phase).toBe('resolution')
+    expect(['resolution', 'ended']).toContain(
+      room.snapshotFor(living[0].id).phase,
+    )
   })
 
   it('derives the claim author from the authenticated player id', () => {

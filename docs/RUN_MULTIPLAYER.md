@@ -87,3 +87,39 @@ This JSON store is designed for a **single authoritative server process**. Do
 not mount the same file for multiple concurrent server instances. Horizontal
 scaling will require a transactional shared store/room coordinator rather than
 a shared JSON file.
+
+
+## Room lifecycle and cleanup
+
+The single-process server now owns room cleanup as part of the same authoritative
+250 ms tick that advances game phases. Defaults:
+
+- reconnect grace for a disconnected **lobby guest**: 120 seconds
+- completely offline lobby TTL: 900 seconds
+- active game with every session offline: 3600 seconds
+- finished game retention: 1800 seconds
+
+Configure them with
+`VAMPIRKY_RECONNECT_GRACE_SECONDS`,
+`VAMPIRKY_EMPTY_LOBBY_TTL_SECONDS`,
+`VAMPIRKY_ABANDONED_GAME_TTL_SECONDS`, and
+`VAMPIRKY_FINISHED_GAME_TTL_SECONDS`.
+
+A disconnected lobby guest may reclaim the same session during the grace
+window. After grace, the non-host seat and its token are removed and the seat
+becomes available again. The host seat is not individually evicted; if the
+whole lobby remains offline, the room-level lobby TTL removes the complete room.
+
+Active matches never remove individual players because doing so would change
+role counts and game semantics. They are removed only when **all** sessions have
+been offline for the abandoned-game TTL. Server-driven phase transitions do not
+reset that offline timer. Finished games are deleted after their own retention
+TTL, including their persisted secret/private state.
+
+Room deletion revokes every session token and rewrites persistence without the
+deleted room. Connected sockets for an expired room receive a session rejection
+and are closed.
+
+The WebSocket server also uses a 30-second ping/pong heartbeat so silent broken
+connections eventually become real disconnects and cannot keep rooms alive
+forever.

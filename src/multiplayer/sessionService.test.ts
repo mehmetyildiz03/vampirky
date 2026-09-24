@@ -290,6 +290,99 @@ describe('room session service', () => {
     })
   })
 
+  it('evicts a disconnected lobby guest after reconnect grace without evicting the host', () => {
+    const service = new RoomSessionService({
+      reconnectGraceMs: 10,
+      emptyLobbyTtlMs: 10_000,
+    })
+    const host = service.createLobby('Host', 'GRACE1')
+    const guest = service.joinLobby('GRACE1', 'Guest')
+    const now = Date.now()
+
+    const result = service.tick(now + 20)
+    expect(result.expiredSessionTokens).toEqual([])
+    expect(() =>
+      service.resumeSession('GRACE1', guest.sessionToken, guest.revision),
+    ).toThrow('Invalid session token for this room.')
+
+    expect(service.resumeSession('GRACE1', host.sessionToken, 0).playerId)
+      .toBe(host.playerId)
+
+    const replacement = service.joinLobby('GRACE1', 'Guest')
+    expect(replacement.playerId).not.toBe(guest.playerId)
+  })
+
+  it('expires an entirely offline lobby and revokes all room sessions', () => {
+    const service = new RoomSessionService({
+      reconnectGraceMs: 60_000,
+      emptyLobbyTtlMs: 10,
+    })
+    const host = service.createLobby('Host', 'TTLLOB')
+    const now = Date.now()
+
+    const result = service.tick(now + 20)
+    expect(result.expiredSessionTokens).toContain(host.sessionToken)
+    expect(service.roomIdForSession(host.sessionToken)).toBeNull()
+    expect(service.exportPersistedState().rooms).toHaveLength(0)
+  })
+
+  it('keeps an active game while someone is connected and expires it after everyone leaves', () => {
+    const service = new RoomSessionService({
+      abandonedGameTtlMs: 10,
+    })
+    const game = discussionGame()
+    const host = service.createRoom(game, game.players[0].id, 'ACTIVE1')
+    const connectedAt = Date.now()
+
+    service.setSessionConnected(host.sessionToken, true, connectedAt)
+    service.tick(connectedAt + 100)
+    expect(service.roomIdForSession(host.sessionToken)).toBe('ACTIVE1')
+
+    service.setSessionConnected(host.sessionToken, false, connectedAt + 100)
+    service.tick(connectedAt + 105)
+    expect(service.roomIdForSession(host.sessionToken)).toBe('ACTIVE1')
+
+    const expired = service.tick(connectedAt + 111)
+    expect(expired.expiredSessionTokens).toContain(host.sessionToken)
+    expect(service.roomIdForSession(host.sessionToken)).toBeNull()
+  })
+
+  it('expires finished games on their own post-match TTL', () => {
+    const service = new RoomSessionService({
+      finishedGameTtlMs: 10,
+      abandonedGameTtlMs: 60_000,
+    })
+    const game = discussionGame()
+    game.phase = 'ended'
+    game.winner = 'village'
+    const host = service.createRoom(game, game.players[0].id, 'ENDED1')
+    const now = Date.now()
+
+    service.tick(now + 5)
+    expect(service.roomIdForSession(host.sessionToken)).toBe('ENDED1')
+
+    const expired = service.tick(now + 20)
+    expect(expired.expiredSessionTokens).toContain(host.sessionToken)
+    expect(service.roomIdForSession(host.sessionToken)).toBeNull()
+  })
+
+  it('server-driven phase changes do not extend an abandoned game lifetime', () => {
+    const service = new RoomSessionService({
+      abandonedGameTtlMs: 100,
+    })
+    const game = beginNight(createGame(seeds(6)))
+    const host = service.createRoom(game, game.players[0].id, 'AUTOEXP')
+    const persisted = service.exportPersistedState()
+    const deadline = persisted.rooms[0].runtime!.phaseDeadlineAt!
+    const offlineSince = Date.now()
+
+    // Advance the night server-side while nobody is connected.
+    service.tick(deadline)
+    const expired = service.tick(offlineSince + 101)
+
+    expect(expired.expiredSessionTokens).toContain(host.sessionToken)
+  })
+
   it('broadcasts a separately scoped game snapshot for every claimed session', () => {
     const game = discussionGame()
     const service = new RoomSessionService()
