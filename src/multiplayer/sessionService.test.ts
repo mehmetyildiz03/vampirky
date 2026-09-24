@@ -368,7 +368,7 @@ describe('room session service', () => {
 
   it('server-driven phase changes do not extend an abandoned game lifetime', () => {
     const service = new RoomSessionService({
-      abandonedGameTtlMs: 100,
+      abandonedGameTtlMs: 60_000,
     })
     const game = beginNight(createGame(seeds(6)))
     const host = service.createRoom(game, game.players[0].id, 'AUTOEXP')
@@ -376,10 +376,12 @@ describe('room session service', () => {
     const deadline = persisted.rooms[0].runtime!.phaseDeadlineAt!
     const offlineSince = Date.now()
 
-    // Advance the night server-side while nobody is connected.
-    service.tick(deadline)
-    const expired = service.tick(offlineSince + 101)
+    // Night resolves around 40s, still inside the 60s abandoned-game window.
+    const phaseAdvance = service.tick(deadline)
+    expect(phaseAdvance.expiredSessionTokens).toEqual([])
+    expect(service.roomIdForSession(host.sessionToken)).toBe('AUTOEXP')
 
+    const expired = service.tick(offlineSince + 60_001)
     expect(expired.expiredSessionTokens).toContain(host.sessionToken)
   })
 
