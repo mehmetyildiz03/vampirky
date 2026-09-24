@@ -54,6 +54,10 @@ export class RoomGateway {
     this.sendBroadcasts(this.sessions.broadcastsForRoomId(roomId))
   }
 
+  tick(now = Date.now()): void {
+    this.sendBroadcasts(this.sessions.tick(now))
+  }
+
   disconnect(peer: TransportPeer): void {
     const sessionToken = this.sessionByPeerId.get(peer.id)
     this.sessionByPeerId.delete(peer.id)

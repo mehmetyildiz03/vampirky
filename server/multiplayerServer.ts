@@ -205,6 +205,8 @@ export function createMultiplayerServer(
     noServer: true,
     maxPayload: MAX_JSON_BYTES,
   })
+  const phaseTicker = setInterval(() => gateway.tick(Date.now()), 250)
+  phaseTicker.unref()
 
   httpServer.on('upgrade', (request, socket, head) => {
     const url = new URL(request.url ?? '/', 'http://server.local')
@@ -272,6 +274,7 @@ export function createMultiplayerServer(
         websocketUrl: `ws://${host}:${port}/ws`,
         close: () =>
           new Promise<void>((resolve, reject) => {
+            clearInterval(phaseTicker)
             for (const client of websocketServer.clients) client.terminate()
             websocketServer.close(() => {
               httpServer.close((error) => error ? reject(error) : resolve())

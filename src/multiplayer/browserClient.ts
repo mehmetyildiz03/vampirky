@@ -52,6 +52,12 @@ type LobbyCommandInput =
   | { type: 'lobby.ready'; ready: boolean }
   | { type: 'lobby.start' }
 
+type StripCommandMeta<T> = T extends { requestId: string; baseRevision: number }
+  ? Omit<T, 'requestId' | 'baseRevision'>
+  : never
+
+export type GameCommandInput = StripCommandMeta<ClientGameCommand>
+
 export class BrowserMultiplayerClient {
   private socket: WebSocket | null = null
   private identity: SessionIdentity | null = null
@@ -199,8 +205,16 @@ export class BrowserMultiplayerClient {
     return this.sendLobbyCommand({ type: 'lobby.start' })
   }
 
+  markPhaseReady(): string {
+    return this.sendCommand({ type: 'phase.ready' })
+  }
+
+  advancePhase(): string {
+    return this.sendCommand({ type: 'phase.advance' })
+  }
+
   sendCommand(
-    command: Omit<ClientGameCommand, 'requestId' | 'baseRevision'>,
+    command: GameCommandInput,
   ): string {
     const requestId = crypto.randomUUID()
     const wireCommand = {

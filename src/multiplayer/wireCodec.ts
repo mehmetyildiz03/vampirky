@@ -43,6 +43,10 @@ function isClientGameCommand(value: unknown): value is ClientGameCommand {
     return isNonNegativeInteger(value.claimId)
   }
 
+  if (value.type === 'phase.ready' || value.type === 'phase.advance') {
+    return true
+  }
+
   if (value.type !== 'claim.record' || !isRecord(value.payload)) return false
   const payload = value.payload
   if (!isString(payload.kind)) return false

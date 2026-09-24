@@ -131,7 +131,7 @@ export class RoomSessionService {
     const roomId = this.reserveRoomId(requestedRoomId)
     const room: RoomRecord = {
       roomId,
-      runtime: new AuthoritativeRoom(structuredClone(initialState)),
+      runtime: new AuthoritativeRoom(structuredClone(initialState), 0, hostPlayerId),
       lobby: null,
       playerIds: new Set(initialState.players.map((player) => player.id)),
       sessionsByToken: new Map(),
@@ -405,7 +405,11 @@ export class RoomSessionService {
 
     const startRevision = lobby.revision + 1
     const seeds: PlayerSeed[] = lobby.players.map(({ id, name }) => ({ id, name }))
-    room.runtime = new AuthoritativeRoom(createGame(seeds), startRevision)
+    room.runtime = new AuthoritativeRoom(
+      createGame(seeds),
+      startRevision,
+      lobby.hostPlayerId,
+    )
     room.lobby = null
     const accepted = this.accept(command.requestId, startRevision)
     session.acceptedRequests.set(command.requestId, accepted)
@@ -446,6 +450,16 @@ export class RoomSessionService {
 
   broadcastsForRoomId(roomIdInput: string): SessionBroadcast[] {
     return this.broadcastsForRoom(this.requireRoom(roomIdInput))
+  }
+
+  tick(now = Date.now()): SessionBroadcast[] {
+    const broadcasts: SessionBroadcast[] = []
+    for (const room of this.rooms.values()) {
+      if (room.runtime?.advanceExpired(now)) {
+        broadcasts.push(...this.broadcastsForRoom(room))
+      }
+    }
+    return broadcasts
   }
 
   roomIdForSession(sessionToken: string): string | null {
