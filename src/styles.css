@@ -1611,3 +1611,29 @@
     min-height:0;
   }
 }
+
+
+/* P3.17 — persistent mobile primary action above the tool dock */
+@media(max-width:960px){
+  .network-action-bar{
+    position:fixed;
+    z-index:91;
+    left:8px;
+    right:8px;
+    bottom:70px;
+  }
+  .network-game-night .network-stage,
+  .network-game-voting .network-stage{
+    padding-bottom:84px;
+  }
+}
+@media(max-width:560px){
+  .network-action-bar{
+    left:5px;
+    right:5px;
+  }
+  .network-game-night .network-stage,
+  .network-game-voting .network-stage{
+    padding-bottom:118px;
+  }
+}
