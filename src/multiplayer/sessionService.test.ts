@@ -131,6 +131,39 @@ describe('room session service', () => {
     })
   })
 
+  it('keeps match-wide private notes scoped to one session', () => {
+    const game = discussionGame()
+    const service = new RoomSessionService()
+    const host = service.createRoom(game, game.players[0].id, 'GENERAL1')
+    const guest = service.claimSeat('GENERAL1', game.players[1].id)
+
+    const result = service.dispatchPrivate(host.sessionToken, {
+      type: 'deduction.general.add',
+      requestId: 'general-note',
+      baseRevision: 0,
+      text: 'İki oyuncu aynı rolü iddia etti.',
+    })
+
+    expect(result.response).toMatchObject({
+      type: 'command.accepted',
+      revision: 0,
+    })
+    expect(result.broadcasts).toHaveLength(1)
+    expect(result.message).toMatchObject({
+      type: 'game.snapshot',
+      snapshot: {
+        privateDeduction: {
+          generalNotes: [
+            expect.objectContaining({ text: 'İki oyuncu aynı rolü iddia etti.' }),
+          ],
+        },
+      },
+    })
+
+    expect(JSON.stringify(service.snapshotForSession(guest.sessionToken)))
+      .not.toContain('İki oyuncu aynı rolü iddia etti.')
+  })
+
   it('rejects oversized private notes without changing public revision', () => {
     const game = discussionGame()
     const service = new RoomSessionService()

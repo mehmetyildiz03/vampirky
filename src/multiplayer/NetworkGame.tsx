@@ -593,10 +593,12 @@ function NetworkDeduction({
   client: BrowserMultiplayerClient
 }) {
   const candidates = snapshot.players.filter((player) => player.id !== snapshot.self.id)
+  const [mode, setMode] = useState<'players' | 'general'>('players')
   const [selectedPlayerId, setSelectedPlayerId] = useState<number>(
     candidates[0]?.id ?? snapshot.self.id,
   )
   const [note, setNote] = useState('')
+  const [generalNote, setGeneralNote] = useState('')
 
   useEffect(() => {
     if (!candidates.some((player) => player.id === selectedPlayerId) && candidates[0]) {
@@ -635,6 +637,16 @@ function NetworkDeduction({
         <p>İşaretler ve notlar session’ına özeldir; diğer oyunculara yayınlanmaz.</p>
       </header>
 
+      <nav className="network-deduction-tabs">
+        <button className={mode === 'players' ? 'active' : ''} onClick={() => setMode('players')}>
+          ♟ Oyuncular
+        </button>
+        <button className={mode === 'general' ? 'active' : ''} onClick={() => setMode('general')}>
+          ▤ Genel Notlar
+        </button>
+      </nav>
+
+      {mode === 'players' && (
       <div className="network-deduction-players">
         {candidates.map((player) => {
           const mark = snapshot.privateDeduction.marks[player.id] ?? 'uncertain'
@@ -656,8 +668,9 @@ function NetworkDeduction({
           )
         })}
       </div>
+      )}
 
-      {selectedPlayer && (
+      {mode === 'players' && selectedPlayer && (
         <section className="network-deduction-detail">
           <h3>{selectedPlayer.name}</h3>
           <div className="network-mark-buttons">
@@ -714,6 +727,75 @@ function NetworkDeduction({
                 </article>
               ))}
             </div>
+          </div>
+        </section>
+      )}
+
+      {mode === 'general' && (
+        <section className="network-general-notes">
+          <div className="network-note-compose">
+            <textarea
+              value={generalNote}
+              maxLength={240}
+              placeholder="Maç hakkında özel genel not…"
+              onChange={(event) => setGeneralNote(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  const normalized = generalNote.trim()
+                  if (!normalized) return
+                  try {
+                    client.addGeneralPrivateNote(normalized)
+                    setGeneralNote('')
+                  } catch {
+                    // BrowserMultiplayerClient surfaces transport failures.
+                  }
+                }
+              }}
+            />
+            <div>
+              <small>{generalNote.length}/240</small>
+              <button
+                disabled={!generalNote.trim()}
+                onClick={() => {
+                  const normalized = generalNote.trim()
+                  if (!normalized) return
+                  try {
+                    client.addGeneralPrivateNote(normalized)
+                    setGeneralNote('')
+                  } catch {
+                    // BrowserMultiplayerClient surfaces transport failures.
+                  }
+                }}
+              >
+                Genel Not Ekle
+              </button>
+            </div>
+          </div>
+
+          <div className="network-note-list">
+            {snapshot.privateDeduction.generalNotes.length === 0 && (
+              <div className="network-empty">Henüz maç-geneli özel not yok.</div>
+            )}
+            {snapshot.privateDeduction.generalNotes.slice().reverse().map((privateNote) => (
+              <article key={privateNote.id}>
+                <header>
+                  <small>{privateNote.round}. tur</small>
+                  <button
+                    onClick={() => {
+                      try {
+                        client.removeGeneralPrivateNote(privateNote.id)
+                      } catch {
+                        // BrowserMultiplayerClient surfaces transport failures.
+                      }
+                    }}
+                  >
+                    Sil
+                  </button>
+                </header>
+                <p>{privateNote.text}</p>
+              </article>
+            ))}
           </div>
         </section>
       )}

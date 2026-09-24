@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { createGame } from './engine'
 import {
+  addPrivateGeneralNote,
   addPrivatePlayerNote,
   createPrivateDeductionState,
   getDeductionMark,
+  getPrivateGeneralNotes,
   getPrivatePlayerNotes,
+  removePrivateGeneralNote,
   removePrivatePlayerNote,
   setDeductionMark,
 } from './deduction'
@@ -90,5 +93,32 @@ describe('private player notes', () => {
     state = addPrivatePlayerNote(state, 1, 1, 'Kendim hakkında not')
 
     expect(getPrivatePlayerNotes(state, 1)).toEqual([])
+  })
+})
+
+
+describe('private general notes', () => {
+  it('stores round-scoped match notes independently from player notes', () => {
+    let state = createPrivateDeductionState(1, [1, 2, 3])
+    state = addPrivateGeneralNote(state, 2, 'İki kişi aynı rolü iddia etti.')
+
+    expect(getPrivateGeneralNotes(state)).toEqual([
+      {
+        id: 1,
+        round: 2,
+        text: 'İki kişi aynı rolü iddia etti.',
+      },
+    ])
+    expect(getPrivatePlayerNotes(state, 2)).toEqual([])
+  })
+
+  it('removes one general private note without mutating others', () => {
+    let state = createPrivateDeductionState(1, [1, 2])
+    state = addPrivateGeneralNote(state, 1, 'İlk genel not')
+    state = addPrivateGeneralNote(state, 2, 'İkinci genel not')
+    state = removePrivateGeneralNote(state, 1)
+
+    expect(getPrivateGeneralNotes(state).map((note) => note.text))
+      .toEqual(['İkinci genel not'])
   })
 })

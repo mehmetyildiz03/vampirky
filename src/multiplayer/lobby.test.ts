@@ -94,6 +94,91 @@ describe('authoritative multiplayer lobby', () => {
     })
   })
 
+  it('rejects a delayed ready command from before the latest settings change', () => {
+    const service = new RoomSessionService()
+    const host = service.createLobby('Host', 'BARRIER')
+    const guest = service.joinLobby('BARRIER', 'Guest')
+    const staleBase = guest.revision
+
+    const changed = service.dispatchLobby(host.sessionToken, {
+      type: 'lobby.duration',
+      requestId: 'change-duration',
+      baseRevision: staleBase,
+      key: 'discussion',
+      seconds: 120,
+    })
+    expect(changed.response.type).toBe('command.accepted')
+
+    const delayedReady = service.dispatchLobby(guest.sessionToken, {
+      type: 'lobby.ready',
+      requestId: 'delayed-ready',
+      baseRevision: staleBase,
+      ready: true,
+    })
+    expect(delayedReady.response).toMatchObject({
+      type: 'command.rejected',
+      code: 'stale_revision',
+    })
+  })
+
+  it('propagates lobby timing into the authoritative runtime', () => {
+    const service = new RoomSessionService()
+    const host = service.createLobby('Host', 'TIMING2')
+    const sessions = [host]
+    for (const name of ['A', 'B', 'C', 'D', 'E']) {
+      sessions.push(service.joinLobby('TIMING2', name))
+    }
+
+    let revision = sessions.at(-1)!.revision
+    const changed = service.dispatchLobby(host.sessionToken, {
+      type: 'lobby.duration',
+      requestId: 'night-70',
+      baseRevision: revision,
+      key: 'night',
+      seconds: 70,
+    })
+    expect(changed.response.type).toBe('command.accepted')
+    revision = changed.response.revision
+
+    for (const session of sessions) {
+      const ready = service.dispatchLobby(session.sessionToken, {
+        type: 'lobby.ready',
+        requestId: 'timing-ready-' + session.playerId,
+        baseRevision: revision,
+        ready: true,
+      })
+      expect(ready.response.type).toBe('command.accepted')
+      revision = ready.response.revision
+    }
+
+    const started = service.dispatchLobby(host.sessionToken, {
+      type: 'lobby.start',
+      requestId: 'timing-start',
+      baseRevision: revision,
+    })
+    expect(started.response.type).toBe('command.accepted')
+    revision = started.response.revision
+
+    let last = started
+    for (const session of sessions) {
+      last = service.dispatchGame(session.sessionToken, {
+        type: 'phase.ready',
+        requestId: 'role-ready-' + session.playerId,
+        baseRevision: revision,
+      })
+      expect(last.response.type).toBe('command.accepted')
+      revision = last.response.revision
+    }
+
+    expect(last.message).toMatchObject({
+      type: 'game.snapshot',
+      snapshot: {
+        phase: 'night',
+        phaseDurationSeconds: 70,
+      },
+    })
+  })
+
   it('keeps the same host session token across lobby to game transition', () => {
     const service = new RoomSessionService()
     const host = service.createLobby('Host', 'START1')
