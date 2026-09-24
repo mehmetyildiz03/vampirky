@@ -3,6 +3,11 @@ import type { ViewerGameSnapshot } from './snapshot'
 
 export type ClientRequestId = string
 
+export interface CommandMeta {
+  requestId: ClientRequestId
+  baseRevision: number
+}
+
 export type ClaimCommandPayload =
   | {
       kind: 'role'
@@ -39,32 +44,27 @@ export type ClaimCommandPayload =
     }
 
 export type ClientGameCommand =
-  | {
+  | (CommandMeta & {
       type: 'chat.send'
-      requestId: ClientRequestId
       channel: ChatChannel
       text: string
-    }
-  | {
+    })
+  | (CommandMeta & {
       type: 'night.submit'
-      requestId: ClientRequestId
       targetId: number
-    }
-  | {
+    })
+  | (CommandMeta & {
       type: 'vote.submit'
-      requestId: ClientRequestId
       targetId: number
-    }
-  | {
+    })
+  | (CommandMeta & {
       type: 'claim.record'
-      requestId: ClientRequestId
       payload: ClaimCommandPayload
-    }
-  | {
+    })
+  | (CommandMeta & {
       type: 'claim.withdraw'
-      requestId: ClientRequestId
       claimId: number
-    }
+    })
 
 export interface SnapshotMessage {
   type: 'game.snapshot'
