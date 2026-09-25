@@ -54,6 +54,7 @@ export function NetworkGame({
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
   const [claimSource, setClaimSource] = useState<{ id: number; text: string; authorId: number } | null>(null)
   const [chatFocusedPlayer, setChatFocusedPlayer] = useState<{ id: number; token: number } | null>(null)
+  const [inspectedPlayerId, setInspectedPlayerId] = useState<number | null>(null)
 
   useEffect(() => {
     setSelectedTarget(null)
@@ -200,6 +201,7 @@ export function NetworkGame({
             selectedTarget={selectedTarget}
             focusedPlayer={chatFocusedPlayer}
             onSelect={setSelectedTarget}
+            onInspect={setInspectedPlayerId}
           />
 
           {snapshot.phase === 'night' && (
@@ -375,6 +377,15 @@ export function NetworkGame({
         </button>
       </nav>
 
+      {inspectedPlayerId !== null && (
+        <PlayerInspector
+          snapshot={snapshot}
+          client={client}
+          playerId={inspectedPlayerId}
+          onClose={() => setInspectedPlayerId(null)}
+        />
+      )}
+
       {error && <div className="network-game-error" role="alert">⚠ {error}</div>}
     </main>
   )
@@ -535,11 +546,13 @@ function PlayerGrid({
   selectedTarget,
   focusedPlayer,
   onSelect,
+  onInspect,
 }: {
   snapshot: ViewerGameSnapshot
   selectedTarget: number | null
   focusedPlayer: { id: number; token: number } | null
   onSelect: (id: number) => void
+  onInspect: (id: number) => void
 }) {
   const selectable = new Set(
     snapshot.phase === 'night'
@@ -609,9 +622,21 @@ function PlayerGrid({
                 chatFocused ? 'chat-focus' : '',
               ].join(' ')}
               style={nightStyle}
-              disabled={!canSelect}
               aria-pressed={canSelect ? selectedTarget === player.id : undefined}
-              onClick={() => canSelect && onSelect(player.id)}
+              aria-label={
+                canSelect
+                  ? selectedTarget === player.id
+                    ? player.name + ' seçili. Oyuncu bilgisi için tekrar dokun.'
+                    : player.name + ' hedefini seç.'
+                  : player.name + ' oyuncu bilgisini aç.'
+              }
+              onClick={() => {
+                if (canSelect && selectedTarget !== player.id) {
+                  onSelect(player.id)
+                  return
+                }
+                onInspect(player.id)
+              }}
             >
               <span className="network-avatar" style={{ '--accent': accent(player.id) } as React.CSSProperties}>
                 {player.name.charAt(0).toLocaleUpperCase('tr-TR')}
@@ -631,16 +656,178 @@ function PlayerGrid({
                       ? '🦇 Takım'
                       : canSelect
                         ? selectedTarget === player.id
-                          ? '✓ Seçildi'
+                          ? '✓ Seçildi · tekrar: bilgi'
                           : 'Hedef olabilir'
                         : nightLayout
-                          ? 'Uyuyor'
-                          : 'Hayatta'}
+                          ? 'Uyuyor · bilgi'
+                          : 'Bilgi için dokun'}
               </small>
             </button>
           )
         })}
       </div>
+    </div>
+  )
+}
+
+function PlayerInspector({
+  snapshot,
+  client,
+  playerId,
+  onClose,
+}: {
+  snapshot: ViewerGameSnapshot
+  client: BrowserMultiplayerClient
+  playerId: number
+  onClose: () => void
+}) {
+  const player = snapshot.players.find((candidate) => candidate.id === playerId)
+  const isSelf = playerId === snapshot.self.id
+  const isKnownAlly = snapshot.self.knownVampireIds.includes(playerId)
+  const activeClaims = snapshot.claims
+    .filter((claim) => claim.claimantId === playerId && claim.status === 'active')
+    .slice()
+    .reverse()
+  const latestVillageMessage = snapshot.chatMessages
+    .slice()
+    .reverse()
+    .find((message) => message.channel === 'village' && message.authorId === playerId)
+  const mark = snapshot.privateDeduction.marks[playerId] ?? 'uncertain'
+  const notes = snapshot.privateDeduction.notes[playerId] ?? []
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
+  if (!player) return null
+
+  const setMark = (nextMark: DeductionMark) => {
+    if (isSelf) return
+    try {
+      client.setDeductionMark(playerId, nextMark)
+    } catch {
+      // BrowserMultiplayerClient surfaces transport failures.
+    }
+  }
+
+  return (
+    <div className="network-player-inspector-layer" role="presentation">
+      <button
+        className="network-player-inspector-backdrop"
+        aria-label="Oyuncu bilgisini kapat"
+        onClick={onClose}
+      />
+      <section
+        className="network-player-inspector"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={'network-player-inspector-title-' + playerId}
+      >
+        <header>
+          <span
+            className="network-avatar"
+            style={{ '--accent': accent(player.id) } as React.CSSProperties}
+          >
+            {player.name.charAt(0).toLocaleUpperCase('tr-TR')}
+          </span>
+          <div>
+            <small>OYUNCU BİLGİSİ</small>
+            <h2 id={'network-player-inspector-title-' + playerId}>{player.name}</h2>
+            <p>
+              {!player.alive
+                ? '☠ Hayalet'
+                : isSelf
+                  ? 'Sen · ' + roleVisuals[snapshot.self.role].title
+                  : isKnownAlly
+                    ? '🦇 Bildiğin Vampir takım arkadaşı'
+                    : 'Hayatta · rolü doğrulanmış değil'}
+            </p>
+          </div>
+          <button className="network-player-inspector-close" aria-label="Kapat" onClick={onClose}>×</button>
+        </header>
+
+        {!isSelf && (
+          <div className="network-player-inspector-marks">
+            <small>BENİM ÖZEL İŞARETİM</small>
+            <div>
+              {(['suspicious', 'uncertain', 'trusted'] as DeductionMark[]).map((item) => (
+                <button
+                  key={item}
+                  className={[item === mark ? 'active' : '', 'mark-' + item].join(' ')}
+                  aria-pressed={item === mark}
+                  onClick={() => setMark(item)}
+                >
+                  {deductionMarkIcon(item)} {deductionMarkLabel(item)}
+                </button>
+              ))}
+            </div>
+            <p>Bu işaret yalnızca senin dedüksiyonunda tutulur.</p>
+          </div>
+        )}
+
+        <div className="network-player-inspector-grid">
+          <section>
+            <header>
+              <small>SON KÖY MESAJI</small>
+              {latestVillageMessage && <em>{latestVillageMessage.round}. tur</em>}
+            </header>
+            {latestVillageMessage ? (
+              <blockquote>“{latestVillageMessage.text}”</blockquote>
+            ) : (
+              <div className="network-empty compact">Görülebilen Köy mesajı yok.</div>
+            )}
+          </section>
+
+          <section>
+            <header>
+              <small>AKTİF İDDİALAR</small>
+              <em>{activeClaims.length}</em>
+            </header>
+            {activeClaims.length > 0 ? (
+              <div className="network-player-inspector-claims">
+                {activeClaims.slice(0, 4).map((claim) => (
+                  <div key={claim.id}>
+                    <b>{claim.kind}</b>
+                    <span>{claimText(snapshot, claim)}</span>
+                  </div>
+                ))}
+                {activeClaims.length > 4 && (
+                  <small>+{activeClaims.length - 4} başka aktif iddia</small>
+                )}
+              </div>
+            ) : (
+              <div className="network-empty compact">Aktif yapılandırılmış iddia yok.</div>
+            )}
+          </section>
+        </div>
+
+        {!isSelf && (
+          <section className="network-player-inspector-notes">
+            <header>
+              <small>ÖZEL NOTLARIM</small>
+              <em>{notes.length}</em>
+            </header>
+            {notes.length > 0 ? (
+              <div>
+                {notes.slice(-2).reverse().map((note) => (
+                  <p key={note.id}>{note.text}</p>
+                ))}
+              </div>
+            ) : (
+              <div className="network-empty compact">Bu oyuncu için özel not yok.</div>
+            )}
+          </section>
+        )}
+
+        <footer>
+          <span>Uygulama bu oyuncunun rolü hakkında karar vermez; yalnızca görünen ve senin kaydettiğin bilgileri toplar.</span>
+          <button onClick={onClose}>Kapat</button>
+        </footer>
+      </section>
     </div>
   )
 }
