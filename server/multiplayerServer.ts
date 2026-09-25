@@ -25,6 +25,11 @@ export interface MultiplayerServerOptions {
   sessions?: RoomSessionService
   persistencePath?: string | null
   lifecycle?: Partial<RoomLifecycleConfig>
+  buildInfo?: {
+    commitSha?: string | null
+    branch?: string | null
+    deploymentId?: string | null
+  }
 }
 
 export interface RunningMultiplayerServer {
@@ -155,6 +160,9 @@ export function createMultiplayerServer(
         json(response, 200, {
           ok: true,
           persistence: Boolean(persistence),
+          commitSha: options.buildInfo?.commitSha ?? null,
+          branch: options.buildInfo?.branch ?? null,
+          deploymentId: options.buildInfo?.deploymentId ?? null,
         }, allowedOrigin)
         return
       }

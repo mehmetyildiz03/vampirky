@@ -17,6 +17,13 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - name: Wait for exact backend commit to reach production
+        env:
+          VAMPIRKY_BACKEND_URL: https://vampirky-backend-production.up.railway.app
+          VAMPIRKY_E2E_ORIGIN: https://mehmetyildiz03.github.io
+          VAMPIRKY_EXPECTED_SHA: ${{ github.sha }}
+          VAMPIRKY_DEPLOY_WAIT_TIMEOUT_MS: 180000
+        run: npm run wait:production-sha -- "$VAMPIRKY_BACKEND_URL" "$VAMPIRKY_EXPECTED_SHA"
       - name: Verify HTTPS, CORS, WebSocket and lobby session flow
         env:
           VAMPIRKY_BACKEND_URL: https://vampirky-backend-production.up.railway.app

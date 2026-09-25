@@ -14,7 +14,8 @@
     "server:start": "tsx server/start.ts",
     "smoke:production": "node scripts/production-smoke.mjs",
     "e2e:production": "node scripts/production-full-match.mjs",
-    "e2e:production:timers": "node scripts/production-timer.mjs"
+    "e2e:production:timers": "node scripts/production-timer.mjs",
+    "wait:production-sha": "node scripts/wait-production-sha.mjs"
   },
   "dependencies": {
     "react": "^19.1.1",

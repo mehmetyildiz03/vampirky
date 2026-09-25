@@ -32,6 +32,11 @@ const server = createMultiplayerServer({
   allowedOrigins,
   persistencePath,
   lifecycle,
+  buildInfo: {
+    commitSha: process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.VAMPIRKY_BUILD_SHA ?? null,
+    branch: process.env.RAILWAY_GIT_BRANCH ?? null,
+    deploymentId: process.env.RAILWAY_DEPLOYMENT_ID ?? null,
+  },
 })
 
 const running = await server.listen()
