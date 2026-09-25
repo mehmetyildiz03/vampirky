@@ -402,6 +402,7 @@ export function recordRoleClaim(
   role: RoleId,
   quote?: string,
   sourceMessageId?: number,
+  recordedById: number = claimantId,
 ): GameState {
   const sourceMessage = assertClaimCreationAllowed(state, claimantId, sourceMessageId)
 
@@ -409,6 +410,7 @@ export function recordRoleClaim(
   const claim: RoleClaim = {
     id: next.nextClaimId,
     claimantId,
+    recordedById,
     kind: 'role',
     role,
     quote: quote?.trim() || undefined,
@@ -483,6 +485,7 @@ export function recordInformationClaim(
   statement: string,
   quote?: string,
   sourceMessageId?: number,
+  recordedById: number = claimantId,
 ): GameState {
   const sourceMessage = assertClaimCreationAllowed(state, claimantId, sourceMessageId)
   assertClaimTargetExists(state, targetId)
@@ -491,6 +494,7 @@ export function recordInformationClaim(
 
   return appendStructuredClaim<InformationClaim>(state, {
     claimantId,
+    recordedById,
     kind: 'information',
     targetId,
     statement: text,
@@ -506,12 +510,14 @@ export function recordActionClaim(
   action: ActionClaim['action'],
   quote?: string,
   sourceMessageId?: number,
+  recordedById: number = claimantId,
 ): GameState {
   const sourceMessage = assertClaimCreationAllowed(state, claimantId, sourceMessageId)
   assertClaimTargetExists(state, targetId)
 
   return appendStructuredClaim<ActionClaim>(state, {
     claimantId,
+    recordedById,
     kind: 'action',
     targetId,
     action,
@@ -527,12 +533,14 @@ export function recordAccusationClaim(
   suspectedRole?: RoleId,
   quote?: string,
   sourceMessageId?: number,
+  recordedById: number = claimantId,
 ): GameState {
   const sourceMessage = assertClaimCreationAllowed(state, claimantId, sourceMessageId)
   assertClaimTargetExists(state, targetId)
 
   return appendStructuredClaim<AccusationClaim>(state, {
     claimantId,
+    recordedById,
     kind: 'accusation',
     targetId,
     suspectedRole,
@@ -547,12 +555,14 @@ export function recordDefenseClaim(
   targetId: number,
   quote?: string,
   sourceMessageId?: number,
+  recordedById: number = claimantId,
 ): GameState {
   const sourceMessage = assertClaimCreationAllowed(state, claimantId, sourceMessageId)
   assertClaimTargetExists(state, targetId)
 
   return appendStructuredClaim<DefenseClaim>(state, {
     claimantId,
+    recordedById,
     kind: 'defense',
     targetId,
     quote: quote?.trim() || undefined,

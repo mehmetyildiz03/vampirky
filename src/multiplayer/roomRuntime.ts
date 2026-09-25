@@ -222,8 +222,8 @@ export class AuthoritativeRoom {
 
       const claim = this.state.claims.find((candidate) => candidate.id === command.claimId)
       if (!claim) throw new Error('Claim not found.')
-      if (claim.claimantId !== playerId) {
-        throw new Error('Players may only withdraw their own public claims.')
+      if (claim.claimantId !== playerId && claim.recordedById !== playerId) {
+        throw new Error('Players may only withdraw claims they made or recorded.')
       }
       this.state = withdrawClaim(this.state, command.claimId)
       return true
@@ -233,49 +233,64 @@ export class AuthoritativeRoom {
       throw new Error('Public claims can only be recorded during the day.')
     }
 
+    const recorder = this.state.players.find((candidate) => candidate.id === playerId)!
+    if (!recorder.alive) throw new Error('Dead players cannot change public claims.')
+
     const payload = command.payload
+    const sourceMessage = payload.sourceMessageId === undefined
+      ? undefined
+      : this.state.chatMessages.find(
+          (message) => message.id === payload.sourceMessageId,
+        )
+    const claimantId = sourceMessage?.authorId ?? playerId
+
     if (payload.kind === 'role') {
       this.state = recordRoleClaim(
         this.state,
-        playerId,
+        claimantId,
         payload.role,
         payload.quote,
         payload.sourceMessageId,
+        playerId,
       )
     } else if (payload.kind === 'information') {
       this.state = recordInformationClaim(
         this.state,
-        playerId,
+        claimantId,
         payload.targetId,
         payload.statement,
         payload.quote,
         payload.sourceMessageId,
+        playerId,
       )
     } else if (payload.kind === 'action') {
       this.state = recordActionClaim(
         this.state,
-        playerId,
+        claimantId,
         payload.targetId,
         payload.action,
         payload.quote,
         payload.sourceMessageId,
+        playerId,
       )
     } else if (payload.kind === 'accusation') {
       this.state = recordAccusationClaim(
         this.state,
-        playerId,
+        claimantId,
         payload.targetId,
         payload.suspectedRole,
         payload.quote,
         payload.sourceMessageId,
+        playerId,
       )
     } else {
       this.state = recordDefenseClaim(
         this.state,
-        playerId,
+        claimantId,
         payload.targetId,
         payload.quote,
         payload.sourceMessageId,
+        playerId,
       )
     }
     return true

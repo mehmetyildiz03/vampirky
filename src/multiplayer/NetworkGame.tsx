@@ -52,7 +52,7 @@ export function NetworkGame({
   const [selectedTarget, setSelectedTarget] = useState<number | null>(null)
   const [sideTab, setSideTab] = useState<'chat' | 'claims' | 'deduction'>('chat')
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
-  const [claimSource, setClaimSource] = useState<{ id: number; text: string } | null>(null)
+  const [claimSource, setClaimSource] = useState<{ id: number; text: string; authorId: number } | null>(null)
   const [chatFocusedPlayer, setChatFocusedPlayer] = useState<{ id: number; token: number } | null>(null)
 
   useEffect(() => {
@@ -323,8 +323,8 @@ export function NetworkGame({
               client={client}
               send={send}
               onFocusPlayer={focusPlayerFromChat}
-              onClaimFromMessage={(id, text) => {
-                setClaimSource({ id, text })
+              onClaimFromMessage={(id, text, authorId) => {
+                setClaimSource({ id, text, authorId })
                 setSideTab('claims')
                 setMobilePanelOpen(true)
               }}
@@ -743,7 +743,7 @@ function NetworkChat({
   client: BrowserMultiplayerClient
   send: (command: GameCommandInput) => void
   onFocusPlayer: (playerId: number) => void
-  onClaimFromMessage: (messageId: number, text: string) => void
+  onClaimFromMessage: (messageId: number, text: string, authorId: number) => void
 }) {
   const channels = snapshot.capabilities.readableChatChannels
   const [channel, setChannel] = useState<ChatChannel>(
@@ -876,11 +876,16 @@ function NetworkChat({
                   </button>
                 )}
                 {message.channel === 'village' &&
-                  isSelf &&
                   snapshot.capabilities.canRecordPublicClaim && (
                     <button
                       className="network-chat-claim"
-                      onClick={() => onClaimFromMessage(message.id, message.text)}
+                      onClick={() =>
+                        onClaimFromMessage(
+                          message.id,
+                          message.text,
+                          message.authorId,
+                        )
+                      }
                     >
                       ◇ İddia olarak kaydet
                     </button>
@@ -1157,7 +1162,7 @@ function NetworkClaims({
 }: {
   snapshot: ViewerGameSnapshot
   send: (command: GameCommandInput) => void
-  source: { id: number; text: string } | null
+  source: { id: number; text: string; authorId: number } | null
   onClearSource: () => void
 }) {
   const [kind, setKind] = useState<ClaimCommandPayload['kind']>('role')
@@ -1211,9 +1216,19 @@ function NetworkClaims({
             </header>
             <p>{claimText(snapshot, claim)}</p>
             {claim.quote && <blockquote>“{claim.quote}”</blockquote>}
-            {claim.claimantId === snapshot.self.id && claim.status === 'active' && snapshot.capabilities.canWithdrawPublicClaim && (
-              <button onClick={() => send({ type: 'claim.withdraw', claimId: claim.id })}>Geri çek</button>
-            )}
+            {claim.recordedById !== undefined &&
+              claim.recordedById !== claim.claimantId && (
+                <small className="network-claim-recorder">
+                  ⌁ {playerName(snapshot, claim.recordedById)} tarafından kaydedildi
+                </small>
+              )}
+            {(claim.claimantId === snapshot.self.id || claim.recordedById === snapshot.self.id) &&
+              claim.status === 'active' &&
+              snapshot.capabilities.canWithdrawPublicClaim && (
+                <button onClick={() => send({ type: 'claim.withdraw', claimId: claim.id })}>
+                  {claim.claimantId === snapshot.self.id ? 'Geri çek' : 'Kaydı kaldır'}
+                </button>
+              )}
           </article>
         ))}
       </div>
@@ -1222,8 +1237,11 @@ function NetworkClaims({
         <>
           {source && (
             <div className="network-claim-source">
-              <span>⌁ KÖY SOHBETİNDEN</span>
+              <span>⌁ KÖY SOHBETİNDEN · {playerName(snapshot, source.authorId)}</span>
               <p>“{source.text}”</p>
+              <small>
+                Bu kayıt mesajın gerçek yazarına bağlanır; uygulama sözün doğru olup olmadığına karar vermez.
+              </small>
               <button onClick={onClearSource}>Kaynağı kaldır</button>
             </div>
           )}

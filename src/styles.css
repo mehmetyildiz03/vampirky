@@ -2169,3 +2169,20 @@
     font-size:8px;
   }
 }
+
+
+/* P3.21 — sourced public claims keep author and recorder provenance */
+.network-claim-source>small{
+  display:block;
+  margin:5px 0 3px;
+  color:#7f776d;
+  font-size:7px;
+  line-height:1.4;
+}
+.network-claim-recorder{
+  display:block;
+  margin-top:5px;
+  color:#776f65!important;
+  font-size:7px!important;
+  font-style:italic;
+}

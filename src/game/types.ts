@@ -33,6 +33,7 @@ export type ClaimStatus = 'active' | 'withdrawn'
 export interface ClaimBase {
   id: number
   claimantId: number
+  recordedById?: number
   kind: ClaimKind
   round: number
   status: ClaimStatus

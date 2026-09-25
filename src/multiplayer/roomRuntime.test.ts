@@ -234,9 +234,64 @@ describe('authoritative multiplayer room runtime', () => {
     expect(result.response.type).toBe('command.accepted')
     expect(result.snapshot.claims.at(-1)).toMatchObject({
       claimantId: actor.id,
+      recordedById: actor.id,
       kind: 'role',
       role: 'seer',
     })
+  })
+
+  it('derives a sourced claim author from the village message and tracks the recorder', () => {
+    let game = beginNight(createGame(seeds(9)))
+    game = resolveNight(game)
+    game = beginDiscussion(game)
+    const room = new AuthoritativeRoom(game)
+    const alive = game.players.filter((candidate) => candidate.alive)
+    const sourceAuthor = alive[0]
+    const recorder = alive[1]
+
+    const chat = room.dispatch(sourceAuthor.id, {
+      type: 'chat.send',
+      requestId: 'source-chat',
+      baseRevision: 0,
+      channel: 'village',
+      text: 'Ben Kâhinim.',
+    })
+    expect(chat.response.type).toBe('command.accepted')
+    const sourceMessage = chat.snapshot.chatMessages.find(
+      (message) => message.authorId === sourceAuthor.id,
+    )
+    expect(sourceMessage).toBeDefined()
+
+    const claim = room.dispatch(recorder.id, {
+      type: 'claim.record',
+      requestId: 'record-sourced-claim',
+      baseRevision: 1,
+      payload: {
+        kind: 'role',
+        role: 'seer',
+        quote: 'Ben Kâhinim.',
+        sourceMessageId: sourceMessage!.id,
+      },
+    })
+
+    expect(claim.response.type).toBe('command.accepted')
+    expect(claim.snapshot.claims.at(-1)).toMatchObject({
+      claimantId: sourceAuthor.id,
+      recordedById: recorder.id,
+      sourceMessageId: sourceMessage!.id,
+      kind: 'role',
+      role: 'seer',
+    })
+
+    const claimId = claim.snapshot.claims.at(-1)!.id
+    const withdrawn = room.dispatch(recorder.id, {
+      type: 'claim.withdraw',
+      requestId: 'withdraw-sourced-claim',
+      baseRevision: 2,
+      claimId,
+    })
+    expect(withdrawn.response.type).toBe('command.accepted')
+    expect(withdrawn.snapshot.claims.at(-1)?.status).toBe('withdrawn')
   })
 
   it('prevents one player from withdrawing another player claim', () => {

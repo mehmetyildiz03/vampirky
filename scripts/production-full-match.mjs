@@ -463,6 +463,58 @@ try {
     ),
   )
 
+  const observedMessageText = 'Ben Köylüyüm; bu sözümü kayda geçirin.'
+  await clients[1].gameCommand({
+    type: 'chat.send',
+    channel: 'village',
+    text: observedMessageText,
+  })
+  await Promise.all(
+    clients.map((client) =>
+      client.waitGame(
+        (snapshot) =>
+          snapshot.chatMessages.some(
+            (message) =>
+              message.authorId === clients[1].session.playerId &&
+              message.channel === 'village' &&
+              message.text === observedMessageText,
+          ),
+        'cross-player village source message',
+      ),
+    ),
+  )
+
+  const observedSource = clients[0].game.chatMessages.find(
+    (message) =>
+      message.authorId === clients[1].session.playerId &&
+      message.text === observedMessageText,
+  )
+  assert(observedSource, 'Could not find cross-player village source message.')
+
+  await clients[0].gameCommand({
+    type: 'claim.record',
+    payload: {
+      kind: 'role',
+      role: 'villager',
+      quote: observedMessageText,
+      sourceMessageId: observedSource.id,
+    },
+  })
+  await Promise.all(
+    clients.map((client) =>
+      client.waitGame(
+        (snapshot) =>
+          snapshot.claims.some(
+            (claim) =>
+              claim.claimantId === clients[1].session.playerId &&
+              claim.recordedById === clients[0].session.playerId &&
+              claim.sourceMessageId === observedSource.id,
+          ),
+        'cross-player sourced claim provenance',
+      ),
+    ),
+  )
+
   await clients[0].gameCommand({ type: 'phase.advance' })
   await waitAllPhase(clients, 'voting', 1)
 
@@ -565,6 +617,7 @@ try {
       protectedNight: true,
       villageChat: true,
       sourcedClaim: true,
+      crossPlayerSourcedClaim: true,
       eliminatedVillager: roundOneVictim.name,
       ghostChatPrivate: true,
     },
