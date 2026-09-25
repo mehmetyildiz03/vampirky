@@ -193,6 +193,8 @@ export function NetworkGame({
             )}
           </div>
 
+          <PhaseTaskGuide snapshot={snapshot} />
+
           <PlayerGrid
             snapshot={snapshot}
             selectedTarget={selectedTarget}
@@ -1431,6 +1433,120 @@ function phaseHeadline(snapshot: ViewerGameSnapshot): string {
     ? 'Köyden kimi göndermek istiyorsun?'
     : 'Oylamayı Hayalet olarak izliyorsun'
   return ''
+}
+
+function PhaseTaskGuide({ snapshot }: { snapshot: ViewerGameSnapshot }) {
+  const guide = phaseTaskGuide(snapshot)
+
+  return (
+    <div className={'network-task-guide ' + guide.tone} role="note" aria-label="Şimdi ne yapmalıyım?">
+      <span className="network-task-guide-icon" aria-hidden="true">{guide.icon}</span>
+      <div>
+        <small>ŞİMDİ NE YAPMALIYIM?</small>
+        <b>{guide.title}</b>
+        <p>{guide.detail}</p>
+      </div>
+    </div>
+  )
+}
+
+function phaseTaskGuide(snapshot: ViewerGameSnapshot): {
+  icon: string
+  title: string
+  detail: string
+  tone: 'night' | 'discussion' | 'voting' | 'ghost' | 'done'
+} {
+  if (!snapshot.self.alive) {
+    if (snapshot.phase === 'night') {
+      return {
+        icon: '☠',
+        title: 'Geceyi izle',
+        detail: 'Canlıların kararlarına müdahale edemezsin; Hayalet kanalında diğer ölülerle konuşabilirsin.',
+        tone: 'ghost',
+      }
+    }
+    if (snapshot.phase === 'discussion') {
+      return {
+        icon: '☠',
+        title: 'Köy meclisini takip et',
+        detail: 'Köy sohbetini okuyabilir, Hayalet kanalında yorum yapabilirsin; kamu kararlarına katılamazsın.',
+        tone: 'ghost',
+      }
+    }
+    return {
+      icon: '☠',
+      title: 'Oylamayı izle',
+      detail: 'Oy kullanamazsın. Sonuç açıklanana kadar köyün kararını ve Hayalet sohbetini takip et.',
+      tone: 'ghost',
+    }
+  }
+
+  if (snapshot.phase === 'night') {
+    if (!snapshot.capabilities.canActAtNight) {
+      return {
+        icon: '☾',
+        title: 'Geceyi izle',
+        detail: 'Bu gece özel aksiyonun yok. Diğer oyuncuların sunucuya kararlarını göndermesini bekle.',
+        tone: 'night',
+      }
+    }
+
+    if (snapshot.capabilities.hasSubmittedNightAction) {
+      return {
+        icon: '✓',
+        title: 'Seçimin sunucuda',
+        detail: 'Gece çözülmeden fikrini değiştirirsen başka bir hedef seçip seçimini güncelleyebilirsin.',
+        tone: 'done',
+      }
+    }
+
+    const actionByRole: Partial<Record<RoleId, { title: string; detail: string }>> = {
+      vampire: {
+        title: 'Kurbanını seç',
+        detail: 'Geçerli bir oyuncuya dokun, ardından saldırı seçimini sunucuya gönder.',
+      },
+      seer: {
+        title: 'Sorgulayacağın oyuncuyu seç',
+        detail: 'Bir oyuncuya dokun, ardından bu geceki gizli sorgunu sunucuya gönder.',
+      },
+      protector: {
+        title: 'Koruyacağın oyuncuyu seç',
+        detail: 'Bir oyuncuya dokun, ardından bu geceki koruma seçimini sunucuya gönder.',
+      },
+    }
+    const action = actionByRole[snapshot.self.role]
+    return {
+      icon: roleVisuals[snapshot.self.role].icon,
+      title: action?.title ?? 'Gece aksiyonunu tamamla',
+      detail: action?.detail ?? 'Geçerli bir hedef seç ve gece aksiyonunu sunucuya gönder.',
+      tone: 'night',
+    }
+  }
+
+  if (snapshot.phase === 'discussion') {
+    return {
+      icon: '✦',
+      title: 'Konuşmaları karşılaştır',
+      detail: 'Köy sohbetini takip et; önemli sözleri iddia olarak kaydet, şüphelerini işaretle ve özel notlarını kullan.',
+      tone: 'discussion',
+    }
+  }
+
+  if (snapshot.capabilities.hasSubmittedVote) {
+    return {
+      icon: '✓',
+      title: 'Oyun sunucuda',
+      detail: 'Oylama kapanmadan fikrini değiştirirsen başka bir oyuncu seçip oyunu güncelleyebilirsin.',
+      tone: 'done',
+    }
+  }
+
+  return {
+    icon: '🗳',
+    title: 'Göndermek istediğin oyuncuyu seç',
+    detail: 'Bir oyuncuya dokun, seçimini kontrol et ve “Oyumu Kullan” ile sunucuya gönder.',
+    tone: 'voting',
+  }
 }
 
 function playerName(snapshot: ViewerGameSnapshot, id: number): string {

@@ -2186,3 +2186,105 @@
   font-size:7px!important;
   font-style:italic;
 }
+
+
+/* P3.22 — contextual "what should I do now?" phase guidance */
+.network-task-guide{
+  position:relative;
+  z-index:3;
+  display:grid;
+  grid-template-columns:38px minmax(0,1fr);
+  align-items:center;
+  gap:9px;
+  width:min(690px,100%);
+  margin:8px auto 14px;
+  padding:9px 11px;
+  border:1px solid #544533;
+  background:linear-gradient(90deg,#12110fef,#0b0e12e8);
+  box-shadow:0 8px 22px #0006,inset 0 0 24px #b8862e0a;
+}
+.network-task-guide-icon{
+  width:34px;
+  height:34px;
+  display:grid;
+  place-items:center;
+  border:1px solid #755b39;
+  border-radius:50%;
+  background:#18130e;
+  color:#e0b872;
+  font-size:17px;
+  box-shadow:0 0 14px #b77a2c25;
+}
+.network-task-guide>div{min-width:0}
+.network-task-guide small{
+  display:block;
+  color:#927b5d;
+  font-size:7px;
+  letter-spacing:.12em;
+}
+.network-task-guide b{
+  display:block;
+  margin-top:2px;
+  color:#ead3ad;
+  font-size:11px;
+}
+.network-task-guide p{
+  margin:2px 0 0;
+  color:#948a7f;
+  font-size:8px;
+  line-height:1.4;
+}
+.network-task-guide.night{
+  border-color:#3f4c60;
+  background:linear-gradient(90deg,#0d121aef,#0a0d12e8);
+}
+.network-task-guide.night .network-task-guide-icon{
+  border-color:#586d88;
+  background:#101824;
+  color:#adc9e6;
+  box-shadow:0 0 15px #5a8bb638;
+}
+.network-task-guide.discussion{
+  border-color:#705336;
+}
+.network-task-guide.voting{
+  border-color:#713b3e;
+  background:linear-gradient(90deg,#1a0e10ef,#0d0d10e8);
+}
+.network-task-guide.voting .network-task-guide-icon{
+  border-color:#8a4145;
+  background:#211013;
+  color:#e09292;
+}
+.network-task-guide.ghost{
+  border-color:#46525d;
+  background:linear-gradient(90deg,#0d141bef,#090d12e8);
+}
+.network-task-guide.ghost .network-task-guide-icon{
+  border-color:#5c7082;
+  background:#111a22;
+  color:#afc4d2;
+}
+.network-task-guide.done{
+  border-color:#5d503a;
+  background:linear-gradient(90deg,#15130eef,#0c0e10e8);
+}
+.network-task-guide.done .network-task-guide-icon{
+  border-color:#7d6842;
+  color:#d7b56f;
+}
+@media(max-width:960px){
+  .network-task-guide{
+    width:100%;
+    grid-template-columns:34px minmax(0,1fr);
+    margin:7px 0 10px;
+    padding:8px 9px;
+  }
+  .network-task-guide-icon{
+    width:32px;
+    height:32px;
+    font-size:16px;
+  }
+  .network-task-guide b{font-size:10px}
+  .network-task-guide p{font-size:8px}
+}
