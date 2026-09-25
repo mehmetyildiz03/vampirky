@@ -53,6 +53,7 @@ export function NetworkGame({
   const [sideTab, setSideTab] = useState<'chat' | 'claims' | 'deduction'>('chat')
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
   const [claimSource, setClaimSource] = useState<{ id: number; text: string } | null>(null)
+  const [chatFocusedPlayer, setChatFocusedPlayer] = useState<{ id: number; token: number } | null>(null)
 
   useEffect(() => {
     setSelectedTarget(null)
@@ -64,6 +65,41 @@ export function NetworkGame({
       setSideTab('chat')
     }
   }, [snapshot.phase, snapshot.round, sideTab])
+
+  useEffect(() => {
+    if (!chatFocusedPlayer) return
+
+    const frame = window.requestAnimationFrame(() => {
+      if (!window.matchMedia('(max-width: 960px)').matches) return
+      document
+        .querySelector<HTMLElement>(
+          '[data-network-player-id="' + chatFocusedPlayer.id + '"]',
+        )
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+    })
+
+    const timeout = window.setTimeout(() => {
+      setChatFocusedPlayer((current) =>
+        current?.id === chatFocusedPlayer.id &&
+        current.token === chatFocusedPlayer.token
+          ? null
+          : current,
+      )
+    }, 1800)
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(timeout)
+    }
+  }, [chatFocusedPlayer])
+
+  const focusPlayerFromChat = (playerId: number) => {
+    setMobilePanelOpen(false)
+    setChatFocusedPlayer((current) => ({
+      id: playerId,
+      token: (current?.token ?? 0) + 1,
+    }))
+  }
 
   const send = (command: GameCommandInput) => {
     try {
@@ -160,6 +196,7 @@ export function NetworkGame({
           <PlayerGrid
             snapshot={snapshot}
             selectedTarget={selectedTarget}
+            focusedPlayer={chatFocusedPlayer}
             onSelect={setSelectedTarget}
           />
 
@@ -283,7 +320,9 @@ export function NetworkGame({
           ) : (
             <NetworkChat
               snapshot={snapshot}
+              client={client}
               send={send}
+              onFocusPlayer={focusPlayerFromChat}
               onClaimFromMessage={(id, text) => {
                 setClaimSource({ id, text })
                 setSideTab('claims')
@@ -492,10 +531,12 @@ function IntermissionPhase({
 function PlayerGrid({
   snapshot,
   selectedTarget,
+  focusedPlayer,
   onSelect,
 }: {
   snapshot: ViewerGameSnapshot
   selectedTarget: number | null
+  focusedPlayer: { id: number; token: number } | null
   onSelect: (id: number) => void
 }) {
   const selectable = new Set(
@@ -551,9 +592,11 @@ function PlayerGrid({
                 '--night-y': (50 + Math.sin(angle) * 38) + '%',
               } as React.CSSProperties)
             : undefined
+          const chatFocused = focusedPlayer?.id === player.id
           return (
             <button
-              key={player.id}
+              key={chatFocused ? player.id + '-chat-' + focusedPlayer.token : player.id}
+              data-network-player-id={player.id}
               className={[
                 'network-player-card',
                 !player.alive ? 'dead' : '',
@@ -561,6 +604,7 @@ function PlayerGrid({
                 selectedTarget === player.id ? 'selected' : '',
                 isSelf ? 'self' : '',
                 isAlly ? 'known-ally' : '',
+                chatFocused ? 'chat-focus' : '',
               ].join(' ')}
               style={nightStyle}
               disabled={!canSelect}
@@ -690,11 +734,15 @@ function VoteActionBar({
 
 function NetworkChat({
   snapshot,
+  client,
   send,
+  onFocusPlayer,
   onClaimFromMessage,
 }: {
   snapshot: ViewerGameSnapshot
+  client: BrowserMultiplayerClient
   send: (command: GameCommandInput) => void
+  onFocusPlayer: (playerId: number) => void
   onClaimFromMessage: (messageId: number, text: string) => void
 }) {
   const channels = snapshot.capabilities.readableChatChannels
@@ -702,6 +750,7 @@ function NetworkChat({
     snapshot.capabilities.writableChatChannels[0] ?? channels[0] ?? 'village',
   )
   const [text, setText] = useState('')
+  const [quickFeedback, setQuickFeedback] = useState<{ messageId: number; text: string } | null>(null)
 
   useEffect(() => {
     if (!channels.includes(channel)) {
@@ -709,8 +758,48 @@ function NetworkChat({
     }
   }, [channels.join('|'), snapshot.capabilities.writableChatChannels.join('|'), channel])
 
+  useEffect(() => {
+    if (!quickFeedback) return
+    const timeout = window.setTimeout(() => setQuickFeedback(null), 1800)
+    return () => window.clearTimeout(timeout)
+  }, [quickFeedback])
+
   const messages = snapshot.chatMessages.filter((message) => message.channel === channel)
   const writable = snapshot.capabilities.writableChatChannels.includes(channel)
+
+  const flashFeedback = (messageId: number, feedback: string) => {
+    setQuickFeedback({ messageId, text: feedback })
+  }
+
+  const markSuspicious = (messageId: number, playerId: number) => {
+    try {
+      client.setDeductionMark(playerId, 'suspicious')
+      flashFeedback(messageId, '⚑ Şüpheli olarak işaretlendi · yalnızca sen görürsün')
+    } catch {
+      // BrowserMultiplayerClient surfaces transport failures.
+    }
+  }
+
+  const saveMessageAsPrivateNote = (
+    messageId: number,
+    playerId: number,
+    messageText: string,
+  ) => {
+    const prefix = '[Sohbet #' + messageId + '] '
+    const available = Math.max(0, 220 - prefix.length)
+    const compactText =
+      messageText.length > available
+        ? messageText.slice(0, Math.max(0, available - 1)) + '…'
+        : messageText
+    const noteText = prefix + compactText
+
+    try {
+      client.addPrivateNote(playerId, noteText)
+      flashFeedback(messageId, '▤ Mesaj özel nota eklendi · yalnızca sen görürsün')
+    } catch {
+      // BrowserMultiplayerClient surfaces transport failures.
+    }
+  }
 
   const submit = () => {
     const normalized = text.trim()
@@ -736,25 +825,76 @@ function NetworkChat({
       </div>
       <div className="network-message-feed">
         {messages.length === 0 && <div className="network-empty">Bu kanalda henüz mesaj yok.</div>}
-        {messages.map((message) => (
-          <article key={message.id} className={message.authorId === snapshot.self.id ? 'mine' : ''}>
-            <header>
-              <b>{playerName(snapshot, message.authorId)}</b>
-              <small>{message.round}. tur · {message.phase}</small>
-            </header>
-            <p>{message.text}</p>
-            {message.channel === 'village' &&
-              message.authorId === snapshot.self.id &&
-              snapshot.capabilities.canRecordPublicClaim && (
+        {messages.map((message) => {
+          const isSelf = message.authorId === snapshot.self.id
+          const mark = snapshot.privateDeduction.marks[message.authorId] ?? 'uncertain'
+          const notePrefix = '[Sohbet #' + message.id + '] '
+          const alreadySaved = (snapshot.privateDeduction.notes[message.authorId] ?? [])
+            .some((note) => note.text.startsWith(notePrefix))
+
+          return (
+            <article key={message.id} className={isSelf ? 'mine' : ''}>
+              <header>
                 <button
-                  className="network-chat-claim"
-                  onClick={() => onClaimFromMessage(message.id, message.text)}
+                  className="network-message-author"
+                  aria-label={playerName(snapshot, message.authorId) + ' oyuncusunu sahnede göster'}
+                  onClick={() => onFocusPlayer(message.authorId)}
                 >
-                  ◇ İddia olarak kaydet
+                  <span>◎</span>
+                  <b>{playerName(snapshot, message.authorId)}</b>
                 </button>
+                <small>{message.round}. tur · {message.phase}</small>
+              </header>
+              <p>{message.text}</p>
+
+              <div className="network-message-actions" aria-label="Mesaj hızlı işlemleri">
+                <button onClick={() => onFocusPlayer(message.authorId)}>
+                  ◎ Oyuncuyu göster
+                </button>
+                {!isSelf && (
+                  <button
+                    className={mark === 'suspicious' ? 'active suspicious' : ''}
+                    disabled={mark === 'suspicious'}
+                    onClick={() => markSuspicious(message.id, message.authorId)}
+                  >
+                    ⚑ {mark === 'suspicious' ? 'Şüpheli' : 'Şüpheli işaretle'}
+                  </button>
+                )}
+                {!isSelf && (
+                  <button
+                    className={alreadySaved ? 'active note-saved' : ''}
+                    disabled={alreadySaved}
+                    onClick={() =>
+                      saveMessageAsPrivateNote(
+                        message.id,
+                        message.authorId,
+                        message.text,
+                      )
+                    }
+                  >
+                    ▤ {alreadySaved ? 'Notta' : 'Nota ekle'}
+                  </button>
+                )}
+                {message.channel === 'village' &&
+                  isSelf &&
+                  snapshot.capabilities.canRecordPublicClaim && (
+                    <button
+                      className="network-chat-claim"
+                      onClick={() => onClaimFromMessage(message.id, message.text)}
+                    >
+                      ◇ İddia olarak kaydet
+                    </button>
+                  )}
+              </div>
+
+              {quickFeedback?.messageId === message.id && (
+                <div className="network-message-feedback" role="status">
+                  {quickFeedback.text}
+                </div>
               )}
-          </article>
-        ))}
+            </article>
+          )
+        })}
       </div>
       {writable ? (
         <div className="network-chat-compose">

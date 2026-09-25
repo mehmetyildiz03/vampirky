@@ -2061,3 +2061,111 @@
     min-height:56px;
   }
 }
+
+
+/* P3.20 — bind chat messages to the council and private deduction */
+.network-message-author{
+  min-width:0;
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:#d9c3a3;
+  text-align:left;
+}
+.network-message-author>span{
+  color:#9d7749;
+  font-size:9px;
+}
+.network-message-author:hover b,
+.network-message-author:focus-visible b{
+  color:#f1d29b;
+  text-decoration:underline;
+  text-underline-offset:2px;
+}
+.network-message-author:focus-visible{
+  outline:1px solid #aa7c46;
+  outline-offset:3px;
+}
+.network-message-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px;
+  margin-top:7px;
+  padding-top:6px;
+  border-top:1px solid #292a2b;
+}
+.network-message-actions>button{
+  min-height:32px;
+  flex:1 1 96px;
+  padding:5px 7px;
+  border:1px solid #3c3832;
+  background:#0d1014;
+  color:#8f867b;
+  font-size:7px;
+  line-height:1.15;
+  white-space:normal;
+}
+.network-message-actions>button:hover:not(:disabled),
+.network-message-actions>button:focus-visible{
+  border-color:#86643c;
+  background:#1b1510;
+  color:#ddbd8a;
+}
+.network-message-actions>button.suspicious{
+  border-color:#6d3537;
+  background:#211113;
+  color:#d67a7d;
+}
+.network-message-actions>button.note-saved{
+  border-color:#5b4d35;
+  color:#bea66f;
+}
+.network-message-actions>button:disabled{
+  cursor:default;
+  opacity:.72;
+}
+.network-message-feedback{
+  margin-top:5px;
+  padding:5px 7px;
+  border:1px solid #4a503d;
+  background:#10150f;
+  color:#9eb185;
+  font-size:7px;
+  line-height:1.35;
+}
+.network-player-card.chat-focus{
+  z-index:6;
+  border-color:#d0a15d!important;
+  box-shadow:
+    0 0 0 2px #20170d,
+    0 0 0 4px #d0a15d80,
+    0 0 30px #d58c324a!important;
+  animation:networkChatPlayerFocus 1.8s ease both;
+}
+.network-player-card.chat-focus .network-avatar{
+  border-color:#efbd70;
+  box-shadow:0 0 0 2px #120d09,0 0 24px #d9913a70;
+}
+@keyframes networkChatPlayerFocus{
+  0%{transform:scale(.96);filter:brightness(1)}
+  22%{transform:scale(1.055);filter:brightness(1.25)}
+  48%{transform:scale(1);filter:brightness(1.12)}
+  100%{transform:scale(1);filter:brightness(1)}
+}
+.network-player-grid.night-ring .network-player-card.chat-focus{
+  animation:networkChatNightPlayerFocus 1.8s ease both;
+}
+@keyframes networkChatNightPlayerFocus{
+  0%{filter:brightness(1)}
+  22%{filter:brightness(1.3)}
+  100%{filter:brightness(1)}
+}
+@media(max-width:960px){
+  .network-message-actions>button{
+    min-height:44px;
+    font-size:8px;
+  }
+}
