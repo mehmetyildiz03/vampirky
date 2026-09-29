@@ -2534,3 +2534,145 @@
     min-height:44px;
   }
 }
+
+
+/* P3.24 — resilient multiplayer reconnect feedback */
+.network-recovery-notice{
+  position:fixed;
+  z-index:140;
+  top:76px;
+  left:50%;
+  transform:translateX(-50%);
+  width:min(620px,calc(100vw - 24px));
+  display:grid;
+  grid-template-columns:40px minmax(0,1fr);
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  border:1px solid #7b5c39;
+  background:#11100ff4;
+  box-shadow:0 14px 42px #000d;
+  backdrop-filter:blur(12px);
+  pointer-events:none;
+}
+.network-recovery-symbol{
+  width:36px;
+  height:36px;
+  display:grid;
+  place-items:center;
+  border:1px solid #80613d;
+  border-radius:50%;
+  background:#1b1510;
+  color:#ddb574;
+  font-size:18px;
+}
+.network-recovery-notice>div{min-width:0}
+.network-recovery-notice small{
+  display:block;
+  color:#a08058;
+  font-size:7px;
+  letter-spacing:.12em;
+}
+.network-recovery-notice b{
+  display:block;
+  margin-top:1px;
+  color:#ecd4ae;
+  font-size:11px;
+}
+.network-recovery-notice p{
+  margin:2px 0 0;
+  color:#9b9186;
+  font-size:8px;
+  line-height:1.4;
+}
+.network-recovery-notice.reconnecting{
+  border-color:#9a6a35;
+  background:linear-gradient(90deg,#21140df6,#101114f6);
+}
+.network-recovery-notice.reconnecting .network-recovery-symbol{
+  animation:networkRecoveryPulse 1.25s ease-in-out infinite;
+}
+.network-recovery-notice.restoring{
+  border-color:#526b7c;
+  background:linear-gradient(90deg,#0d1821f6,#0d1116f6);
+}
+.network-recovery-notice.restoring .network-recovery-symbol{
+  border-color:#547891;
+  background:#101c25;
+  color:#9bc7df;
+  animation:networkRecoverySpin 1.2s linear infinite;
+}
+.network-recovery-notice.recovered{
+  border-color:#4d6d51;
+  background:linear-gradient(90deg,#0e1b12f6,#0d1110f6);
+}
+.network-recovery-notice.recovered .network-recovery-symbol{
+  border-color:#57825d;
+  background:#102016;
+  color:#91c69a;
+}
+.network-recovery-notice.closed{
+  grid-template-columns:40px minmax(0,1fr) auto;
+  border-color:#7f3f43;
+  background:linear-gradient(90deg,#251014f6,#100d10f6);
+  pointer-events:auto;
+}
+.network-recovery-notice.closed .network-recovery-symbol{
+  border-color:#873f44;
+  background:#251014;
+  color:#e18b8e;
+}
+.network-recovery-notice.closed>button{
+  min-height:36px;
+  padding:7px 10px;
+  border:1px solid #774247;
+  background:#2a1216;
+  color:#dda0a2;
+  font-size:8px;
+}
+@keyframes networkRecoveryPulse{
+  0%,100%{opacity:.62;box-shadow:0 0 0 #bd7c3100}
+  50%{opacity:1;box-shadow:0 0 22px #bd7c3150}
+}
+@keyframes networkRecoverySpin{
+  to{transform:rotate(360deg)}
+}
+.network-game.network-connection-paused .network-stage button,
+.network-game.network-connection-paused .network-game-side button,
+.network-game.network-connection-paused .network-game-side textarea,
+.network-game.network-connection-paused .network-game-side input,
+.network-game.network-connection-paused .network-game-side select{
+  pointer-events:none;
+  opacity:.55;
+}
+.network-lobby.network-connection-paused .ready-toggle,
+.network-lobby.network-connection-paused .start{
+  opacity:.55;
+}
+@media(max-width:960px){
+  .network-recovery-notice{
+    top:68px;
+    width:calc(100vw - 12px);
+    grid-template-columns:36px minmax(0,1fr);
+    padding:8px 9px;
+  }
+  .network-recovery-symbol{
+    width:32px;
+    height:32px;
+    font-size:16px;
+  }
+  .network-recovery-notice.closed{
+    grid-template-columns:34px minmax(0,1fr);
+  }
+  .network-recovery-notice.closed>button{
+    grid-column:1/3;
+    width:100%;
+    min-height:42px;
+  }
+}
+@media(prefers-reduced-motion:reduce){
+  .network-recovery-notice.reconnecting .network-recovery-symbol,
+  .network-recovery-notice.restoring .network-recovery-symbol{
+    animation:none;
+  }
+}

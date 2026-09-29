@@ -8,6 +8,7 @@ import type {
 } from './browserClient'
 import type { ClaimCommandPayload } from './protocol'
 import type { ViewerGameSnapshot } from './snapshot'
+import { ConnectionRecoveryNotice } from './ConnectionRecoveryNotice'
 
 const roleVisuals: Record<RoleId, { icon: string; title: string; text: string; action: string }> = {
   vampire: {
@@ -55,6 +56,16 @@ export function NetworkGame({
   const [claimSource, setClaimSource] = useState<{ id: number; text: string; authorId: number } | null>(null)
   const [chatFocusedPlayer, setChatFocusedPlayer] = useState<{ id: number; token: number } | null>(null)
   const [inspectedPlayerId, setInspectedPlayerId] = useState<number | null>(null)
+  const visibleError =
+    connectionState === 'ready' || connectionState === 'closed' ? error : ''
+
+  const connectivityNotice = (
+    <ConnectionRecoveryNotice
+      state={connectionState}
+      context="game"
+      onExit={onExit}
+    />
+  )
 
   useEffect(() => {
     setSelectedTarget(null)
@@ -112,42 +123,58 @@ export function NetworkGame({
 
   if (snapshot.phase === 'role_reveal') {
     return (
-      <RoleRevealPhase
-        snapshot={snapshot}
-        connectionState={connectionState}
-        error={error}
-        onReady={() => client.markPhaseReady()}
-        onExit={onExit}
-      />
+      <>
+        {connectivityNotice}
+        <RoleRevealPhase
+          snapshot={snapshot}
+          connectionState={connectionState}
+          error={visibleError}
+          onReady={() => client.markPhaseReady()}
+          onExit={onExit}
+        />
+      </>
     )
   }
 
   if (snapshot.phase === 'dawn') {
     return (
-      <IntermissionPhase
-        snapshot={snapshot}
-        mode="dawn"
-        error={error}
-        onReady={() => client.markPhaseReady()}
-        onExit={onExit}
-      />
+      <>
+        {connectivityNotice}
+        <IntermissionPhase
+          snapshot={snapshot}
+          connectionState={connectionState}
+          mode="dawn"
+          error={visibleError}
+          onReady={() => client.markPhaseReady()}
+          onExit={onExit}
+        />
+      </>
     )
   }
 
   if (snapshot.phase === 'resolution') {
     return (
-      <IntermissionPhase
-        snapshot={snapshot}
-        mode="resolution"
-        error={error}
-        onReady={() => client.markPhaseReady()}
-        onExit={onExit}
-      />
+      <>
+        {connectivityNotice}
+        <IntermissionPhase
+          snapshot={snapshot}
+          connectionState={connectionState}
+          mode="resolution"
+          error={visibleError}
+          onReady={() => client.markPhaseReady()}
+          onExit={onExit}
+        />
+      </>
     )
   }
 
   if (snapshot.phase === 'ended') {
-    return <NetworkEnd snapshot={snapshot} onExit={onExit} />
+    return (
+      <>
+        {connectivityNotice}
+        <NetworkEnd snapshot={snapshot} onExit={onExit} />
+      </>
+    )
   }
 
   const timer = (
@@ -159,12 +186,15 @@ export function NetworkGame({
   )
 
   return (
-    <main className={[
-      'network-game',
-      'network-game-' + snapshot.phase,
-      !snapshot.self.alive ? 'network-game-ghost' : '',
-      'network-role-' + snapshot.self.role,
-    ].join(' ')}>
+    <>
+      {connectivityNotice}
+      <main className={[
+        'network-game',
+        'network-game-' + snapshot.phase,
+        !snapshot.self.alive ? 'network-game-ghost' : '',
+        'network-role-' + snapshot.self.role,
+        connectionState !== 'ready' ? 'network-connection-paused' : '',
+      ].join(' ')}>
       <header className="network-game-top">
         <div>
           <small>{snapshot.round}. TUR · CANLI OYUN</small>
@@ -386,8 +416,9 @@ export function NetworkGame({
         />
       )}
 
-      {error && <div className="network-game-error" role="alert">⚠ {error}</div>}
-    </main>
+      {visibleError && <div className="network-game-error" role="alert">⚠ {visibleError}</div>}
+      </main>
+    </>
   )
 }
 
@@ -439,7 +470,7 @@ function RoleRevealPhase({
         <small>{snapshot.phaseReadyCount}/{snapshot.phaseReadyRequired} oyuncu rolünü gördü</small>
         <button
           className="start"
-          disabled={!snapshot.capabilities.canMarkPhaseReady}
+          disabled={connectionState !== 'ready' || !snapshot.capabilities.canMarkPhaseReady}
           onClick={onReady}
         >
           {snapshot.capabilities.hasMarkedPhaseReady ? '✓ Hazırsın' : 'Rolümü Gördüm · Hazırım'} <b>›</b>
@@ -456,12 +487,14 @@ function RoleRevealPhase({
 
 function IntermissionPhase({
   snapshot,
+  connectionState,
   mode,
   error,
   onReady,
   onExit,
 }: {
   snapshot: ViewerGameSnapshot
+  connectionState: ClientConnectionState
   mode: 'dawn' | 'resolution'
   error: string
   onReady: () => void
@@ -526,7 +559,7 @@ function IntermissionPhase({
         </div>
         <button
           className="start"
-          disabled={!snapshot.capabilities.canMarkPhaseReady}
+          disabled={connectionState !== 'ready' || !snapshot.capabilities.canMarkPhaseReady}
           onClick={onReady}
         >
           {snapshot.capabilities.hasMarkedPhaseReady

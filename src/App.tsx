@@ -50,6 +50,7 @@ import {
 import type { LobbySnapshot } from './multiplayer/protocol'
 import type { ViewerGameSnapshot } from './multiplayer/snapshot'
 import { NetworkGame } from './multiplayer/NetworkGame'
+import { ConnectionRecoveryNotice } from './multiplayer/ConnectionRecoveryNotice'
 
 type Screen =
   | 'home'
@@ -313,6 +314,7 @@ export default function App() {
     return multiplayerClient.subscribe((event) => {
       if (event.type === 'state') {
         setMultiplayerConnection(event.state)
+        if (event.state === 'ready') setMultiplayerError('')
       } else if (event.type === 'lobbySnapshot') {
         setMultiplayerLobby(event.snapshot)
         setMultiplayerError('')
@@ -979,7 +981,8 @@ function MultiplayerEntry({
           </button>
         </div>
       </section>
-    </main>
+      </main>
+    </>
   )
 }
 
@@ -1019,7 +1022,13 @@ function NetworkLobby({
   }
 
   return (
-    <main className="lobby network-lobby">
+    <>
+      <ConnectionRecoveryNotice
+        state={connectionState}
+        context="lobby"
+        onExit={onBack}
+      />
+      <main className={'lobby network-lobby ' + (connectionState !== 'ready' ? 'network-connection-paused' : '')}>
       <aside className="lobby-left">
         <Brand />
         <button className="back" onClick={onBack}>← Bağlantıyı Kes</button>
@@ -1121,7 +1130,7 @@ function NetworkLobby({
               icon="☀"
               label="Tartışma Süresi"
               value={snapshot.phaseDurations.discussion}
-              disabled={!isHost}
+              disabled={!isHost || connectionState !== 'ready'}
               onChange={(direction) =>
                 onDurationChange(
                   'discussion',
@@ -1133,7 +1142,7 @@ function NetworkLobby({
               icon="☾"
               label="Gece Süresi"
               value={snapshot.phaseDurations.night}
-              disabled={!isHost}
+              disabled={!isHost || connectionState !== 'ready'}
               onChange={(direction) =>
                 onDurationChange(
                   'night',
@@ -1145,7 +1154,7 @@ function NetworkLobby({
               icon="🗳"
               label="Oylama Süresi"
               value={snapshot.phaseDurations.voting}
-              disabled={!isHost}
+              disabled={!isHost || connectionState !== 'ready'}
               onChange={(direction) =>
                 onDurationChange(
                   'voting',
@@ -1195,17 +1204,19 @@ function NetworkLobby({
               </div>
             )}
 
-            {error && <div className="network-error">⚠ {error}</div>}
+            {error && ['ready', 'closed'].includes(connectionState) && (
+              <div className="network-error">⚠ {error}</div>
+            )}
             <button
               className={'ready-toggle ' + (self?.ready ? 'is-ready' : '')}
-              disabled={!self}
+              disabled={!self || connectionState !== 'ready'}
               onClick={() => self && onReady(!self.ready)}
             >
               {self?.ready ? '✓ Hazırım' : '○ Hazır Değilim'}
             </button>
 
             {isHost ? (
-              <button className="start" disabled={!snapshot.canStart} onClick={onStart}>
+              <button className="start" disabled={connectionState !== 'ready' || !snapshot.canStart} onClick={onStart}>
                 {snapshot.canStart
                   ? 'Oyunu Başlat'
                   : !enoughPlayers
