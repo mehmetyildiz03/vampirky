@@ -53,7 +53,7 @@ export function NetworkGame({
   const [selectedTarget, setSelectedTarget] = useState<number | null>(null)
   const [sideTab, setSideTab] = useState<'chat' | 'claims' | 'deduction'>('chat')
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false)
-  const [claimSource, setClaimSource] = useState<{ id: number; text: string; authorId: number } | null>(null)
+  const [claimSource, setClaimSource] = useState<{ id: number; text: string; authorId: number; round: number } | null>(null)
   const [chatFocusedPlayer, setChatFocusedPlayer] = useState<{ id: number; token: number } | null>(null)
   const [inspectedPlayerId, setInspectedPlayerId] = useState<number | null>(null)
   const visibleError =
@@ -357,8 +357,8 @@ export function NetworkGame({
               client={client}
               send={send}
               onFocusPlayer={focusPlayerFromChat}
-              onClaimFromMessage={(id, text, authorId) => {
-                setClaimSource({ id, text, authorId })
+              onClaimFromMessage={(id, text, authorId, round) => {
+                setClaimSource({ id, text, authorId, round })
                 setSideTab('claims')
                 setMobilePanelOpen(true)
               }}
@@ -965,7 +965,7 @@ function NetworkChat({
   client: BrowserMultiplayerClient
   send: (command: GameCommandInput) => void
   onFocusPlayer: (playerId: number) => void
-  onClaimFromMessage: (messageId: number, text: string, authorId: number) => void
+  onClaimFromMessage: (messageId: number, text: string, authorId: number, round: number) => void
 }) {
   const channels = snapshot.capabilities.readableChatChannels
   const [channel, setChannel] = useState<ChatChannel>(
@@ -1106,6 +1106,7 @@ function NetworkChat({
                           message.id,
                           message.text,
                           message.authorId,
+                          message.round,
                         )
                       }
                     >
@@ -1376,6 +1377,19 @@ function deductionMarkLabel(mark: DeductionMark): string {
   return 'Kararsızım'
 }
 
+const networkClaimKinds: Array<{
+  kind: ClaimCommandPayload['kind']
+  icon: string
+  title: string
+  hint: string
+}> = [
+  { kind: 'role', icon: '♟', title: 'Rol', hint: 'Bir rolü üstlendi' },
+  { kind: 'information', icon: '◉', title: 'Bilgi', hint: 'Bir oyuncu hakkında bilgi verdi' },
+  { kind: 'action', icon: '⌁', title: 'Aksiyon', hint: 'Gece yaptığı işi anlattı' },
+  { kind: 'accusation', icon: '⚑', title: 'Suçlama', hint: 'Bir oyuncuyu şüpheli gösterdi' },
+  { kind: 'defense', icon: '⬟', title: 'Savunma', hint: 'Bir oyuncuyu savundu' },
+]
+
 function NetworkClaims({
   snapshot,
   send,
@@ -1384,57 +1398,136 @@ function NetworkClaims({
 }: {
   snapshot: ViewerGameSnapshot
   send: (command: GameCommandInput) => void
-  source: { id: number; text: string; authorId: number } | null
+  source: { id: number; text: string; authorId: number; round: number } | null
   onClearSource: () => void
 }) {
-  const [kind, setKind] = useState<ClaimCommandPayload['kind']>('role')
+  const [kind, setKind] = useState<ClaimCommandPayload['kind'] | null>(null)
   const [targetId, setTargetId] = useState<number>(
     snapshot.players.find((player) => player.id !== snapshot.self.id)?.id ?? snapshot.self.id,
   )
   const [role, setRole] = useState<RoleId>('seer')
+  const [suspectedRole, setSuspectedRole] = useState<RoleId | ''>('')
   const [statement, setStatement] = useState('')
   const [action, setAction] = useState<'protected' | 'investigated' | 'visited'>('investigated')
   const [quote, setQuote] = useState('')
 
   useEffect(() => {
-    if (!source) return
-    setQuote(source.text)
+    setKind(null)
+    setSuspectedRole('')
+
+    if (!source) {
+      setStatement('')
+      setQuote('')
+      return
+    }
+
     setStatement(source.text)
-  }, [source])
+    setQuote(source.text)
+    const preferredTarget =
+      snapshot.players.find((player) => player.id !== source.authorId)?.id ??
+      source.authorId
+    setTargetId(preferredTarget)
+  }, [source?.id])
+
+  const claimantId = source?.authorId ?? snapshot.self.id
+  const claimantName = playerName(snapshot, claimantId)
+  const canSubmit =
+    kind !== null &&
+    (kind !== 'information' || statement.trim().length > 0)
 
   const submit = () => {
+    if (!kind || !canSubmit) return
+
+    const sourceQuote = source?.text ?? quote.trim()
     let payload: ClaimCommandPayload
+
     if (kind === 'role') {
-      payload = { kind, role, quote: quote.trim() || undefined }
+      payload = {
+        kind,
+        role,
+        quote: sourceQuote || undefined,
+      }
     } else if (kind === 'information') {
-      if (!statement.trim()) return
-      payload = { kind, targetId, statement: statement.trim(), quote: quote.trim() || undefined }
+      payload = {
+        kind,
+        targetId,
+        statement: statement.trim(),
+        quote: sourceQuote || undefined,
+      }
     } else if (kind === 'action') {
-      payload = { kind, targetId, action, quote: quote.trim() || undefined }
+      payload = {
+        kind,
+        targetId,
+        action,
+        quote: sourceQuote || undefined,
+      }
     } else if (kind === 'accusation') {
-      payload = { kind, targetId, suspectedRole: role, quote: quote.trim() || undefined }
+      payload = {
+        kind,
+        targetId,
+        suspectedRole: suspectedRole || undefined,
+        quote: sourceQuote || undefined,
+      }
     } else {
-      payload = { kind, targetId, quote: quote.trim() || undefined }
+      payload = {
+        kind,
+        targetId,
+        quote: sourceQuote || undefined,
+      }
     }
 
     if (source) {
       payload = { ...payload, sourceMessageId: source.id } as ClaimCommandPayload
     }
+
     send({ type: 'claim.record', payload })
+    setKind(null)
     setStatement('')
     setQuote('')
+    setSuspectedRole('')
+    setAction('investigated')
     onClearSource()
   }
 
   return (
     <div className="network-claims">
+      <div className="network-claim-list-head">
+        <div>
+          <small>KAMUYA AÇIK KAYITLAR</small>
+          <b>İddia Defteri</b>
+        </div>
+        <span>{snapshot.claims.filter((claim) => claim.status === 'active').length} aktif</span>
+      </div>
+
       <div className="network-claim-list">
-        {snapshot.claims.length === 0 && <div className="network-empty">Henüz yapılandırılmış iddia yok.</div>}
+        {snapshot.claims.length === 0 && (
+          <div className="network-empty">
+            Henüz yapılandırılmış iddia yok. Köy sohbetindeki önemli sözleri kayda çevirebilirsin.
+          </div>
+        )}
         {snapshot.claims.slice().reverse().map((claim) => (
-          <article key={claim.id} className={claim.status === 'withdrawn' ? 'withdrawn' : ''}>
+          <article
+            key={claim.id}
+            className={[
+              'network-claim-card',
+              'kind-' + claim.kind,
+              claim.status === 'withdrawn' ? 'withdrawn' : '',
+            ].join(' ')}
+          >
             <header>
-              <b>{playerName(snapshot, claim.claimantId)}</b>
-              <small>{claim.round}. tur · {claim.kind}</small>
+              <div>
+                <b>{playerName(snapshot, claim.claimantId)}</b>
+                <small>
+                  {claim.round}. tur · {networkClaimKindLabel(claim.kind)}
+                </small>
+              </div>
+              {claim.status === 'withdrawn' ? (
+                <span className="network-claim-status withdrawn">GERİ ÇEKİLDİ</span>
+              ) : claim.sourceMessageId !== undefined ? (
+                <span className="network-claim-status sourced">⌁ SOHBETTEN</span>
+              ) : (
+                <span className="network-claim-status manual">MANUEL</span>
+              )}
             </header>
             <p>{claimText(snapshot, claim)}</p>
             {claim.quote && <blockquote>“{claim.quote}”</blockquote>}
@@ -1456,51 +1549,186 @@ function NetworkClaims({
       </div>
 
       {snapshot.capabilities.canRecordPublicClaim && (
-        <>
+        <section className={'network-claim-composer ' + (source ? 'from-source' : 'manual')}>
+          <header className="network-claim-composer-head">
+            <div>
+              <small>{source ? 'SOHBETTEN İDDİA KAYDI' : 'YENİ İDDİA KAYDI'}</small>
+              <b>{source ? claimantName + ' ne söyledi?' : 'Kendi sözünü yapılandır'}</b>
+              <p>
+                {source
+                  ? 'Sözü kimin söylediği ve kaynak mesaj sabittir. Sen yalnızca sözün ne tür bir iddia olduğunu sınıflandırırsın.'
+                  : 'Bu kayıt senin adına oluşturulur. Uygulama iddianın doğru olup olmadığına karar vermez.'}
+              </p>
+            </div>
+            {source && (
+              <button className="network-claim-source-clear" onClick={onClearSource}>
+                Kaynağı bırak
+              </button>
+            )}
+          </header>
+
           {source && (
-            <div className="network-claim-source">
-              <span>⌁ KÖY SOHBETİNDEN · {playerName(snapshot, source.authorId)}</span>
-              <p>“{source.text}”</p>
-              <small>
-                Bu kayıt mesajın gerçek yazarına bağlanır; uygulama sözün doğru olup olmadığına karar vermez.
-              </small>
-              <button onClick={onClearSource}>Kaynağı kaldır</button>
+            <div className="network-claim-source-card">
+              <span
+                className="network-avatar"
+                style={{ '--accent': accent(source.authorId) } as React.CSSProperties}
+              >
+                {claimantName.charAt(0).toLocaleUpperCase('tr-TR')}
+              </span>
+              <div>
+                <small>{source.round}. TUR · KÖY SOHBETİ · MESAJ #{source.id}</small>
+                <b>{claimantName}</b>
+                <blockquote>“{source.text}”</blockquote>
+              </div>
+              <em>KAYNAK SABİT</em>
             </div>
           )}
-          <div className="network-claim-form">
-          <select value={kind} onChange={(event) => setKind(event.target.value as ClaimCommandPayload['kind'])}>
-            <option value="role">Rol iddiası</option>
-            <option value="information">Bilgi</option>
-            <option value="action">Aksiyon</option>
-            <option value="accusation">Suçlama</option>
-            <option value="defense">Savunma</option>
-          </select>
 
-          {kind === 'role' ? (
-            <RoleSelect value={role} onChange={setRole} />
-          ) : (
-            <select value={targetId} onChange={(event) => setTargetId(Number(event.target.value))}>
-              {snapshot.players.map((player) => (
-                <option value={player.id} key={player.id}>{player.name}</option>
+          <div className="network-claim-step">
+            <div className="network-claim-step-title">
+              <span>1</span>
+              <div>
+                <b>Ne tür bir iddia?</b>
+                <small>Mesajın anlamını sen sınıflandır.</small>
+              </div>
+            </div>
+            <div className="network-claim-kind-grid" role="group" aria-label="İddia türü">
+              {networkClaimKinds.map((option) => (
+                <button
+                  key={option.kind}
+                  className={[
+                    'kind-' + option.kind,
+                    kind === option.kind ? 'active' : '',
+                  ].join(' ')}
+                  aria-pressed={kind === option.kind}
+                  onClick={() => setKind(option.kind)}
+                >
+                  <span>{option.icon}</span>
+                  <div>
+                    <b>{option.title}</b>
+                    <small>{option.hint}</small>
+                  </div>
+                </button>
               ))}
-            </select>
-          )}
-
-          {kind === 'information' && (
-            <input value={statement} onChange={(event) => setStatement(event.target.value)} placeholder="Paylaştığın bilgi…" />
-          )}
-          {kind === 'action' && (
-            <select value={action} onChange={(event) => setAction(event.target.value as typeof action)}>
-              <option value="investigated">Araştırdım</option>
-              <option value="protected">Korudum</option>
-              <option value="visited">Ziyaret ettim</option>
-            </select>
-          )}
-          {kind === 'accusation' && <RoleSelect value={role} onChange={setRole} />}
-          <input value={quote} onChange={(event) => setQuote(event.target.value)} placeholder="İsteğe bağlı doğrudan alıntı" />
-          <button onClick={submit}>◇ İddiayı Kaydet</button>
+            </div>
           </div>
-        </>
+
+          {kind && (
+            <div className="network-claim-step detail">
+              <div className="network-claim-step-title">
+                <span>2</span>
+                <div>
+                  <b>{networkClaimKindLabel(kind)} ayrıntısı</b>
+                  <small>Yalnızca bu kayıt için gerekli alanlar.</small>
+                </div>
+              </div>
+
+              <div className="network-claim-fields">
+                {kind === 'role' && (
+                  <label>
+                    <span>Hangi rolü iddia etti?</span>
+                    <RoleSelect value={role} onChange={setRole} />
+                  </label>
+                )}
+
+                {kind !== 'role' && (
+                  <label>
+                    <span>{networkClaimTargetPrompt(kind, action)}</span>
+                    <select
+                      value={targetId}
+                      onChange={(event) => setTargetId(Number(event.target.value))}
+                    >
+                      {snapshot.players.map((player) => (
+                        <option value={player.id} key={player.id}>{player.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {kind === 'information' && (
+                  <label>
+                    <span>Bilginin kısa özeti</span>
+                    <textarea
+                      value={statement}
+                      maxLength={280}
+                      onChange={(event) => setStatement(event.target.value)}
+                      placeholder="Örn. Masum olduğunu gördüm."
+                    />
+                    <small>Kaynak mesaj korunur; burada yapılandırılmış özeti düzenleyebilirsin.</small>
+                  </label>
+                )}
+
+                {kind === 'action' && (
+                  <label>
+                    <span>Hangi aksiyonu yaptığını söyledi?</span>
+                    <select
+                      value={action}
+                      onChange={(event) => setAction(event.target.value as typeof action)}
+                    >
+                      <option value="investigated">Araştırdım</option>
+                      <option value="protected">Korudum</option>
+                      <option value="visited">Ziyaret ettim</option>
+                    </select>
+                  </label>
+                )}
+
+                {kind === 'accusation' && (
+                  <label>
+                    <span>Şüphelendiği rol <em>isteğe bağlı</em></span>
+                    <select
+                      value={suspectedRole}
+                      onChange={(event) => setSuspectedRole(event.target.value as RoleId | '')}
+                    >
+                      <option value="">Rol belirtmedi</option>
+                      <option value="vampire">Vampir</option>
+                      <option value="villager">Köylü</option>
+                      <option value="seer">Kâhin</option>
+                      <option value="protector">Koruyucu</option>
+                    </select>
+                  </label>
+                )}
+
+                {!source && (
+                  <label className="network-claim-quote-field">
+                    <span>Doğrudan alıntı <em>isteğe bağlı</em></span>
+                    <textarea
+                      value={quote}
+                      maxLength={280}
+                      onChange={(event) => setQuote(event.target.value)}
+                      placeholder="Oyuncunun söylediği cümleyi istersen buraya ekle."
+                    />
+                  </label>
+                )}
+              </div>
+
+              <div className="network-claim-draft">
+                <small>KAYDEDİLECEK</small>
+                <p>
+                  <strong>{claimantName}</strong>
+                  <span>→</span>
+                  {networkClaimDraftText(
+                    snapshot,
+                    kind,
+                    targetId,
+                    role,
+                    statement,
+                    action,
+                    suspectedRole,
+                  )}
+                </p>
+                {source && <em>⌁ Kaynak mesaj bu kayda bağlı kalır.</em>}
+              </div>
+
+              <button
+                className="network-claim-save"
+                disabled={!canSubmit}
+                onClick={submit}
+              >
+                ◇ İddiayı Kaydet
+              </button>
+            </div>
+          )}
+        </section>
       )}
     </div>
   )
@@ -1522,6 +1750,62 @@ function RoleSelect({
     </select>
   )
 }
+
+function networkClaimKindLabel(kind: ClaimCommandPayload['kind']): string {
+  if (kind === 'role') return 'Rol iddiası'
+  if (kind === 'information') return 'Bilgi'
+  if (kind === 'action') return 'Aksiyon'
+  if (kind === 'accusation') return 'Suçlama'
+  return 'Savunma'
+}
+
+function networkActionClaimLabel(
+  action: 'protected' | 'investigated' | 'visited',
+): string {
+  if (action === 'protected') return 'Koruduğunu söyledi'
+  if (action === 'investigated') return 'Araştırdığını söyledi'
+  return 'Ziyaret ettiğini söyledi'
+}
+
+function networkClaimTargetPrompt(
+  kind: Exclude<ClaimCommandPayload['kind'], 'role'>,
+  action: 'protected' | 'investigated' | 'visited',
+): string {
+  if (kind === 'information') return 'Kimin hakkında bilgi verdi?'
+  if (kind === 'accusation') return 'Kimi suçladı?'
+  if (kind === 'defense') return 'Kimi savundu?'
+  if (action === 'protected') return 'Kimi koruduğunu söyledi?'
+  if (action === 'investigated') return 'Kimi araştırdığını söyledi?'
+  return 'Kimi ziyaret ettiğini söyledi?'
+}
+
+function networkClaimDraftText(
+  snapshot: ViewerGameSnapshot,
+  kind: ClaimCommandPayload['kind'],
+  targetId: number,
+  role: RoleId,
+  statement: string,
+  action: 'protected' | 'investigated' | 'visited',
+  suspectedRole: RoleId | '',
+): string {
+  if (kind === 'role') {
+    return roleVisuals[role].title + ' rolünü iddia ediyor.'
+  }
+
+  const target = playerName(snapshot, targetId)
+  if (kind === 'information') {
+    return target + ' hakkında “' + (statement.trim() || 'bilgi özeti bekleniyor') + '” diyor.'
+  }
+  if (kind === 'action') {
+    return target + ' için ' + networkActionClaimLabel(action).toLocaleLowerCase('tr-TR') + '.'
+  }
+  if (kind === 'accusation') {
+    return target + ' oyuncusunu şüpheli gösteriyor' +
+      (suspectedRole ? ' · ' + roleVisuals[suspectedRole].title : '') + '.'
+  }
+  return target + ' oyuncusunu savunuyor.'
+}
+
 
 function NetworkEnd({
   snapshot,
@@ -1776,7 +2060,7 @@ function playerName(snapshot: ViewerGameSnapshot, id: number): string {
 function claimText(snapshot: ViewerGameSnapshot, claim: ViewerGameSnapshot['claims'][number]): string {
   if (claim.kind === 'role') return `${roleVisuals[claim.role].title} rolünü iddia ediyor.`
   if (claim.kind === 'information') return `${playerName(snapshot, claim.targetId)} hakkında: ${claim.statement}`
-  if (claim.kind === 'action') return `${playerName(snapshot, claim.targetId)} · ${claim.action}`
+  if (claim.kind === 'action') return `${playerName(snapshot, claim.targetId)} · ${networkActionClaimLabel(claim.action)}`
   if (claim.kind === 'accusation') {
     return `${playerName(snapshot, claim.targetId)} şüpheli${claim.suspectedRole ? ' · ' + roleVisuals[claim.suspectedRole].title : ''}`
   }
