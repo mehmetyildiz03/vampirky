@@ -1316,7 +1316,8 @@ function Lobby({
           </div>
         </div>
       </section>
-    </main>
+      </main>
+    </>
   )
 }
 
