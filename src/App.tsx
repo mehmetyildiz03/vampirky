@@ -981,8 +981,7 @@ function MultiplayerEntry({
           </button>
         </div>
       </section>
-      </main>
-    </>
+    </main>
   )
 }
 
@@ -1241,7 +1240,8 @@ function NetworkLobby({
           </div>
         </div>
       </section>
-    </main>
+      </main>
+    </>
   )
 }
 
